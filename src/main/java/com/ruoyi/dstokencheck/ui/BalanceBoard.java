@@ -2,6 +2,12 @@ package com.ruoyi.dstokencheck.ui;
 
 import com.ruoyi.dstokencheck.autostart.AutoStart;
 import com.ruoyi.dstokencheck.config.AppConfig;
+import com.sun.jna.Native;
+import com.sun.jna.Platform;
+import com.sun.jna.Pointer;
+import com.sun.jna.platform.win32.User32;
+import com.sun.jna.platform.win32.WinDef.HWND;
+import com.sun.jna.platform.win32.WinUser;
 import com.ruoyi.dstokencheck.model.BalanceSnapshot;
 import com.ruoyi.dstokencheck.model.Wallet;
 import com.ruoyi.dstokencheck.net.DeepSeekClient;
@@ -75,6 +81,16 @@ public class BalanceBoard extends JFrame {
     private static final float F_SMALL = 10.5f;
     private static final float FONT_SCALE_STEP = 0.05f;
 
+    /**
+     * {@code HWND_TOPMOST} from winuser.h — jna-platform's WinUser does not expose it.
+     *
+     * <p>The {@code L} matters: {@code Pointer.createConstant} is overloaded for {@code int} and
+     * {@code long}, and the {@code int} overload zero-extends, so {@code createConstant(-1)} yields
+     * 0xFFFFFFFF rather than -1. Passing that as {@code hWndInsertAfter} fails with
+     * ERROR_INVALID_WINDOW_HANDLE (1400) and the window never moves.
+     */
+    private static final HWND HWND_TOPMOST = new HWND(Pointer.createConstant(-1L));
+
     private static final int NONE = 0;
     private static final int WEST = 1;
     private static final int EAST = 2;
@@ -106,6 +122,8 @@ public class BalanceBoard extends JFrame {
     private final IconButton closeButton = new IconButton(IconButton.Glyph.CLOSE, "\u9690\u85cf\u7a97\u53e3");
 
     private final Timer refreshTimer;
+    /** Periodically puts the widget back at the front of the topmost band. See reassertTopMost(). */
+    private final Timer topMostGuard;
     private final AWTEventListener mouseWatcher;
 
     private int resizeEdge = NONE;
@@ -160,11 +178,33 @@ public class BalanceBoard extends JFrame {
             public void windowClosing(WindowEvent e) {
                 shutdown();
             }
+
+            // Losing activation is exactly what happens when the taskbar is clicked, and the
+            // taskbar then sits above this window even though it is still flagged topmost.
+            @Override
+            public void windowDeactivated(WindowEvent e) {
+                reassertTopMost();
+            }
+
+            @Override
+            public void windowActivated(WindowEvent e) {
+                reassertTopMost();
+            }
+
+            @Override
+            public void windowDeiconified(WindowEvent e) {
+                reassertTopMost();
+            }
         });
 
         refreshTimer = new Timer(
                 Math.max(AppConfig.MIN_REFRESH_SECONDS, config.getRefreshSeconds()) * 1000, e -> refresh());
         refreshTimer.setInitialDelay(0);
+
+        // Safety net for the cases that raise no activation event (taskbar previews, shell flyouts).
+        // One SetWindowPos per second is negligible and cannot steal focus.
+        topMostGuard = new Timer(1000, e -> reassertTopMost());
+        topMostGuard.setInitialDelay(1000);
 
         mouseWatcher = createMouseWatcher();
         Toolkit.getDefaultToolkit().addAWTEventListener(
@@ -529,10 +569,69 @@ public class BalanceBoard extends JFrame {
 
     private void toggleAlwaysOnTop() {
         boolean on = !isAlwaysOnTop();
-        setAlwaysOnTop(on);
         config.setAlwaysOnTop(on);
         config.save();
+        applyAlwaysOnTop(on);
+    }
+
+    /** Applies the pin state and keeps the guard timer in step with it. */
+    private void applyAlwaysOnTop(boolean on) {
+        setAlwaysOnTop(on);
         pinButton.setActive(on);
+        if (on) {
+            reassertTopMost();
+            if (!topMostGuard.isRunning()) {
+                topMostGuard.start();
+            }
+        } else {
+            topMostGuard.stop();
+        }
+    }
+
+    /**
+     * Puts this window back at the front of the topmost band, using the Win32 API.
+     *
+     * <p>{@code setAlwaysOnTop(true)} only sets {@code WS_EX_TOPMOST}. The taskbar is topmost as
+     * well, and inside that band the most recently activated window wins — so after the widget is
+     * dragged over the taskbar and the taskbar is clicked, the taskbar ends up covering the widget
+     * even though {@code isAlwaysOnTop()} still reports {@code true}. A fresh
+     * {@code SetWindowPos(HWND_TOPMOST)} re-seats it at the front.
+     *
+     * <p>{@code SWP_NOACTIVATE} is essential: it re-orders the window without taking focus, so the
+     * guard never interrupts whatever the user is typing into.
+     *
+     * <p>Skipped while one of our own dialogs is open, otherwise the widget would jump in front of
+     * its own settings window.
+     */
+    private void reassertTopMost() {
+        if (!isAlwaysOnTop() || !isDisplayable() || hasVisibleOwnedWindow()) {
+            return;
+        }
+        if (!Platform.isWindows()) {
+            // Other platforms keep always-on-top without this, so just re-apply the flag.
+            setAlwaysOnTop(true);
+            return;
+        }
+        try {
+            Pointer handle = Native.getWindowPointer(this);
+            if (handle == null) {
+                return;
+            }
+            User32.INSTANCE.SetWindowPos(new HWND(handle), HWND_TOPMOST, 0, 0, 0, 0,
+                    WinUser.SWP_NOMOVE | WinUser.SWP_NOSIZE | WinUser.SWP_NOACTIVATE);
+        } catch (Throwable t) {
+            // A cosmetic z-order fix must never be able to break the widget.
+        }
+    }
+
+    /** True while one of our own dialogs is up, so the widget does not jump in front of it. */
+    private boolean hasVisibleOwnedWindow() {
+        for (java.awt.Window owned : getOwnedWindows()) {
+            if (owned.isVisible()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void applyOpacity() {
@@ -577,6 +676,7 @@ public class BalanceBoard extends JFrame {
     public void start() {
         accountLabel.setText(currentKeyLabel());
         refreshTimer.start();
+        applyAlwaysOnTop(isAlwaysOnTop());
     }
 
     /** Footer label: which key is in use, masked, and whether it is remembered. */
@@ -591,6 +691,7 @@ public class BalanceBoard extends JFrame {
 
     private void shutdown() {
         refreshTimer.stop();
+        topMostGuard.stop();
         if (mouseWatcher != null) {
             try {
                 Toolkit.getDefaultToolkit().removeAWTEventListener(mouseWatcher);
@@ -865,6 +966,9 @@ public class BalanceBoard extends JFrame {
         if (dragging || resizeEdge != NONE) {
             config.setBounds(getBounds());
             config.save();
+            // A move can drop the window out of the topmost band, and dragging it over the taskbar
+            // is the usual way this bug shows up. Re-seat it as soon as the gesture ends.
+            reassertTopMost();
         }
         dragging = false;
         resizeEdge = NONE;

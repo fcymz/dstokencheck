@@ -128,8 +128,12 @@ public final class Main {
 
     /** Where this build is running from, for the startup log. */
     private static String ownJarPath() {
-        File jar = AutoStart.launcherJar();
-        return jar == null ? "(not a jar)" : jar.getAbsolutePath();
+        File running = AutoStart.runningJar();
+        if (running != null) {
+            return running.getAbsolutePath();
+        }
+        File launcher = AutoStart.launcherJar();
+        return launcher == null ? "(not a jar)" : launcher.getAbsolutePath();
     }
 
     /**

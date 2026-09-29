@@ -87,6 +87,14 @@ public final class AutoStart {
     }
 
     /**
+     * The jar this process was actually loaded from, or null when running from a classes directory.
+     * Distinct from {@link #launcherJar()}, which may be the stable copy.
+     */
+    public static File runningJar() {
+        return applicationJar();
+    }
+
+    /**
      * The jar the Run entry should launch.
      *
      * <p>Prefers the stable copy. Registering the running jar directly is unsafe when the app is

@@ -20,7 +20,7 @@
 | 无边框窗口 | 无系统标题栏，深色圆角卡片样式 |
 | 可拖动 | 在窗口任意空白处按住左键拖动 |
 | 可缩放 | 拖拽窗口四条边或四个角即可改变大小（最小尺寸随字体缩放），右键菜单也有预设尺寸 |
-| 窗口置顶 | 默认为置顶，点图钉按钮切换 |
+| 窗口置顶 | 默认为置顶；即使点任务栏，小窗口也会自动回到任务栏之上（见下） |
 | 开机自启 | 右键菜单 →「开机自启」，登录 Windows 后自动启动（写在 HKCU Run 项，无需管理员权限） |
 | 位置记忆 | 关闭时保存窗口位置与大小到配置文件 |
 
@@ -67,8 +67,30 @@ java -jar target\dstokencheck.jar
    - **右键菜单**：刷新、退出登录、开机自启、置顶、窗口尺寸、字体大小、刷新间隔、退出
    - 右上角图标：图钉（置顶）、刷新、隐藏
 
-### 字体大小
+### 置顶（为什么会盖住任务栏，以及怎么修的）
 
+`setAlwaysOnTop(true)` 只是给窗口打上 `WS_EX_TOPMOST` 标记。**任务栏也是 topmost 窗口**，
+而 topmost 这一层内部是谁最后被激活谁在上面——所以把小窗口拖到任务栏上、再点一下任务栏，
+任务栏就会盖住小窗口，尽管 `isAlwaysOnTop()` 依然返回 `true`。
+
+修法是主动把窗口重新放回 topmost 层的最前面：
+
+- 窗口失去激活（点任务栏正是这种情况）时立刻重排一次；
+- 另有一个 1 秒的守护定时器兜底，覆盖任务栏预览、弹出面板这类不产生激活事件的情况；
+- 调用的是 `SetWindowPos(HWND_TOPMOST, …, SWP_NOACTIVATE)`，**不会抢焦点**，
+  所以不会打断你正在别的程序里打字；
+- 自己的对话框（设置窗口等）打开时跳过，免得小窗口压到自己的对话框上面。
+
+> 踩坑记录：`HWND_TOPMOST` 是 `(HWND)-1`，但 jna-platform 没导出这个常量，
+> 得自己写。而 `Pointer.createConstant` 有 `int` 和 `long` 两个重载，
+> **`createConstant(-1)` 会走 int 重载并零扩展成 `0xFFFFFFFF`**，作为 `hWndInsertAfter`
+> 是非法值，`SetWindowPos` 直接返回 false、错误码 1400（ERROR_INVALID_WINDOW_HANDLE）。
+> 必须写成 `createConstant(-1L)`。
+>
+> 这个 bug 光看代码看不出来，是靠 `tools/verify-topmost.ps1` 把任务栏真的抬到上面、
+> 再检查 z-order 才抓到的。
+
+### 字体大小
 三种改法，效果相同，都是对**整个界面等比缩放**（不是只放大金额数字）：
 
 - **`Ctrl` + 鼠标滚轮**：在窗口上滚动，每次 ±5%。
@@ -244,6 +266,7 @@ tools/                            开发期工具（可选，不影响运行）
 ├── SecretProbe.java              验证加密与「记住我」存取（会写 user.home，请配合 -Duser.home 用）
 ├── capture-window.ps1            真实截屏某个窗口（DPI 感知），用于验证渲染
 ├── window-timeline.ps1           按时间轴打印窗口出现顺序，用于验证「记住我」自动登录
+├── verify-topmost.ps1            抬起任务栏并检查 z-order，验证「不被任务栏盖住」
 ├── scan-chunks.ps1               扫描平台前端 chunk（当初定位接口用，现已不需要）
 ├── apikey-window.png             登录窗口渲染效果
 └── demo-window.png               小窗口渲染效果

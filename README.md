@@ -241,13 +241,22 @@ src/main/java/com/ruoyi/dstokencheck/
     └── BalanceBoard.java         无边框主窗口（自实现拖动、缩放、退出登录）
 
 tools/                            开发期工具（可选，不影响运行）
-├── SecretProbe.java              验证加密与「记住我」存取（会写真实配置文件，用后自动还原）
+├── SecretProbe.java              验证加密与「记住我」存取（会写 user.home，请配合 -Duser.home 用）
 ├── capture-window.ps1            真实截屏某个窗口（DPI 感知），用于验证渲染
 ├── window-timeline.ps1           按时间轴打印窗口出现顺序，用于验证「记住我」自动登录
 ├── scan-chunks.ps1               扫描平台前端 chunk（当初定位接口用，现已不需要）
 ├── apikey-window.png             登录窗口渲染效果
 └── demo-window.png               小窗口渲染效果
 ```
+
+> **工具不会碰你的真实配置。** `capture-window.ps1` 和 `window-timeline.ps1` 都会把
+> `user.home` 指到 `%TEMP%` 下的临时目录再启动程序，所以既不会读也不会写
+> `%USERPROFILE%\.dstokencheck\`。`SecretProbe.java` 读的是 `user.home`，
+> 请自己加上 `-Duser.home=%TEMP%\probe` 再跑。
+>
+> （早期版本的 `capture-window.ps1` 为了拿到干净的启动状态，会直接
+> `Remove-Item` 真实配置文件——那会连加密保存的 API Key 一起删掉，且不进回收站。
+> 已改为隔离临时目录，并用哨兵文件验证过不再触碰真实配置。）
 
 ## 已知限制
 

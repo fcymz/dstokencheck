@@ -6,10 +6,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Throwaway check for the "记住我" storage path: the encrypted key must survive a
- * save/reload cycle, and the plaintext must never appear in the config file.
+ * Development check for the "记住我" storage path: the encrypted key must survive a save/reload
+ * cycle, and the plaintext must never appear in the config file.
  *
- * <p>Writes to the real config location, so the caller backs it up first.
+ * <p><b>This writes to whatever {@code user.home} points at.</b> Run it against a throwaway
+ * directory so it cannot disturb a real setup:
+ *
+ * <pre>java -Duser.home=%TEMP%\probe -cp target\dstokencheck.jar;. SecretProbe</pre>
+ *
+ * <p>Its {@code --clear} mode erases stored credentials from that location.
  */
 public class SecretProbe {
 

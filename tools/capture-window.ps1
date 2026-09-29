@@ -45,8 +45,14 @@ public class WinCap {
 
 [void][WinCap]::SetProcessDPIAware()
 
-$cfg = Join-Path $env:USERPROFILE '.dstokencheck\config.properties'
-Remove-Item $cfg -Force -ErrorAction SilentlyContinue
+# Run the app against a THROWAWAY home directory. It starts with no saved key, which is what this
+# tool wants (the login window), and it never touches the user's real config.
+#
+# This used to `Remove-Item` the real config to get a clean start -- which silently destroyed the
+# user's saved API key and settings. Never do that again: point user.home somewhere else instead.
+$probeHome = Join-Path $env:TEMP 'dstokencheck-capture-home'
+Remove-Item $probeHome -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $probeHome | Out-Null
 
 # Resolve the JVM and jar relative to this script so the tool is portable.
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -56,7 +62,7 @@ if (-not $java) { throw 'java.exe not found on PATH' }
 if (-not (Test-Path $jar)) { throw "jar not found: $jar (run 'mvn package' first)" }
 $out = Join-Path $env:TEMP 'ds-cap-out.txt'
 
-$launchArgs = @('-jar', $jar)
+$launchArgs = @("-Duser.home=$probeHome", '-jar', $jar)
 if ($JavaArgs -ne "") { $launchArgs += ($JavaArgs -split ' ') }
 $p = Start-Process -FilePath $java -ArgumentList $launchArgs `
     -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err" -WindowStyle Hidden

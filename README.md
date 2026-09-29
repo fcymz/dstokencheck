@@ -32,9 +32,25 @@
 - JDK 8 或更高（`pom.xml` 以 Java 8 为编译目标）
 - Maven 3.x（构建用）
 
-## 构建与运行
+## 运行方式
+
+### 方式一：直接下载（不需要 JDK / Maven）
+
+1. 打开 [Releases 页面](https://github.com/fcymz/dstokencheck/releases)，下载最新版的
+   **`dstokencheck.jar`** 和 **`run.bat`**。
+2. 把这两个文件放到**同一个文件夹**里（例如 `D:\dstokencheck\`）。
+3. 双击 `run.bat`。
+
+只需要设备装了 **Java 8 或更高版本**（[下载](https://adoptium.net/)）。
+没装 Java 的话 `run.bat` 会一闪而过，请先装 JRE/JDK。
+
+### 方式二：从源码构建
+
+需要 **JDK 8+** 和 **Maven**：
 
 ```bat
+git clone https://github.com/fcymz/dstokencheck.git
+cd dstokencheck
 mvn clean package
 run.bat
 ```
@@ -45,6 +61,10 @@ run.bat
 java -jar target\dstokencheck.jar
 ```
 
+> `run.bat` 会按顺序找两个位置：`target\dstokencheck.jar`（本地构建产物），
+> 然后是和自己同目录的 `dstokencheck.jar`（从 Releases 下载的）。
+> 两个都没有时会打印明确提示并暂停，不会一闪而过。
+
 > **`run.bat` 必须保持纯 ASCII 内容。**
 > `cmd.exe` 用系统 OEM 代码页（简中环境是 GBK）解析批处理文件，不是 UTF-8。
 > 文件里一旦有中文注释，UTF-8 字节会被按 GBK 误解码，可能解出 `&` 之类的命令分隔符，
@@ -52,6 +72,18 @@ java -jar target\dstokencheck.jar
 > `'xxx' is not recognized as an internal or external command`，甚至把注释里的
 > `mvn clean package` 真的跑一遍，最后根本走不到启动那一步。
 > `--selftest` 里有一项专门检查这个（非 ASCII 字节数必须为 0）。
+
+## 发布新版本
+
+推送一个 `v*` 形式的 tag，GitHub Actions 会自动构建并把 jar 挂到 Release 上：
+
+```bat
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+工作流定义见 `.github/workflows/release.yml`。用 CI 构建而不是把 jar 提交进仓库，
+是为了不让每次更新都往 git 历史里塞一份 5.6 MB 的二进制。
 
 ## 使用说明
 

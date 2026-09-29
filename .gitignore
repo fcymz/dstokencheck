@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------- build output
+target/
+build/
+out/
+!.mvn/wrapper/maven-wrapper.jar
+
+# ------------------------------------------------------------------------ IDE
+# The whole .idea directory, not just parts of it: workspace.xml records
+# machine-specific paths and would churn on every clone.
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# --------------------------------------------------------------------- Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# -------------------------------------------------------------------- NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# -------------------------------------------------------------------------- OS
+.DS_Store
+Thumbs.db
+
+# ------------------------------------------------- runtime state: never commit
+# The app does NOT store anything inside the project. It writes to the user's
+# home directory:
+#     %USERPROFILE%\.dstokencheck\config.properties   <- holds apiKeyProtected
+#     %USERPROFILE%\.dstokencheck\startup.log
+# so a clone never contains a credential. The patterns below are a second line
+# of defence in case a copy of those files is ever dropped into the project.
+.dstokencheck/
+config.properties
+startup.log
+*.log
+secrets.properties
+secrets.txt
+*.key

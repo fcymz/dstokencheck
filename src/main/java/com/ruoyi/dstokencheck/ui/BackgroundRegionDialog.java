@@ -948,6 +948,7 @@ public class BackgroundRegionDialog extends JDialog {
                 if (image != null) {
                     Rectangle cover = BackgroundLayout.imageRect(cropBounds,
                             image.getWidth(), image.getHeight(), w, h);
+                    Theme.paintCheckerboard(g2, 0, 0, w, h);
                     g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                             RenderingHints.VALUE_INTERPOLATION_BILINEAR);
                     g2.drawImage(canvas.displayImage(), cover.x, cover.y, cover.width, cover.height, null);
@@ -1248,6 +1249,9 @@ public class BackgroundRegionDialog extends JDialog {
                         g2.fill(new RoundRectangle2D.Float(cover.x - i, cover.y - i + 1,
                                 cover.width + 2 * i, cover.height + 2 * i, 6, 6));
                     }
+                    // Chequered mat first: where the picture is see-through the widget will show the
+                    // desktop, and the editor has to say so somehow.
+                    Theme.paintCheckerboard(g2, cover.x, cover.y, cover.width, cover.height);
                     // Smoothing matters here: a snapshot straight off a phone is many times the
                     // canvas and nearest-neighbour would shatter it into visible blocks.
                     g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,

@@ -101,6 +101,9 @@ public class BalanceBoard extends JFrame {
      */
     private static final HWND HWND_TOPMOST = new HWND(Pointer.createConstant(-1L));
 
+    /** Fully transparent window background; see applyPictureTranslucency for why it is needed. */
+    private static final Color TRANSPARENT = new Color(0, 0, 0, 0);
+
     private static final int NONE = 0;
     private static final int WEST = 1;
     private static final int EAST = 2;
@@ -153,6 +156,10 @@ public class BalanceBoard extends JFrame {
     private Rectangle2D.Float imageCrop;
     /** The crop's silhouette; a rectangle unless the user traced an irregular one. */
     private CropShape cropShape;
+    /** True when the picture has see-through pixels, so the window itself is translucent. */
+    private boolean imageHasAlpha;
+    /** True while the window is on the per-pixel translucent path. */
+    private boolean translucent;
     /** Normalised box on that image where the balance is drawn. */
     private Rectangle2D.Float balanceRegion;
     /** Compact "CNY ≈ 12.4M tokens · 含赠送 …" line shown inside the framed box. */
@@ -731,6 +738,63 @@ public class BalanceBoard extends JFrame {
     }
 
     /**
+     * Puts the window on the per-pixel translucent path when the picture has see-through pixels.
+     *
+     * <p>An opaque window has a background colour, so every transparent pixel of the picture is
+     * composited onto it — which is why a cut-out PNG used to arrive as a black rectangle. Only a
+     * per-pixel translucent window lets the desktop show through where the picture is transparent,
+     * and only that path can also blend the soft half-transparent edge of a cut-out properly.
+     *
+     * <p>The cost is the one {@link #applyShape} warns about: on such a window LCD text
+     * antialiasing can emit glyphs with alpha 0. Everything drawn here is therefore antialiased in
+     * greyscale — the balance figure in {@link BalanceTextRenderer}, the error line by the same
+     * rule — and the window keeps a shape so the rest of its rectangle stays out of the way.
+     */
+    private void applyPictureTranslucency() {
+        boolean want = backgroundImage != null && imageHasAlpha;
+        if (want == translucent) {
+            return;
+        }
+        try {
+            setBackground(want ? TRANSPARENT : Theme.BG_BOTTOM);
+            translucent = want;
+            applyOpacity();
+        } catch (Exception e) {
+            // Some platforms only allow switching this before the window is on screen. Keep the mode
+            // we are in and say so on the picture itself — the footer is hidden by then, and a black
+            // rectangle with no explanation is worse than a rectangle with one.
+            String hint = want
+                    ? "\u5f53\u524d\u7cfb\u7edf\u4e0d\u652f\u6301\u7a97\u53e3\u900f\u660e\uff0c\u80cc\u666f\u56fe\u7684\u900f\u660e\u533a\u57df\u4f1a\u663e\u793a\u4e3a\u6df1\u8272"
+                    : "\u80cc\u666f\u56fe\u5df2\u66f4\u6362\uff0c\u91cd\u542f\u540e\u751f\u6548";
+            statusLabel.setForeground(Theme.WARN);
+            statusLabel.setText(hint);
+            board.setErrorText(hint);
+        }
+    }
+
+    /**
+     * True when any pixel of the picture is not fully opaque.
+     *
+     * <p>Sampled rather than scanned: a transparent background covers a large part of the picture,
+     * and a full pass over a 24-megapixel photo is not worth it every time one is loaded.
+     */
+    private static boolean hasTranslucency(BufferedImage image) {
+        if (image == null || !image.getColorModel().hasAlpha()) {
+            return false;
+        }
+        int stepX = Math.max(1, image.getWidth() / 400);
+        int stepY = Math.max(1, image.getHeight() / 400);
+        for (int y = 0; y < image.getHeight(); y += stepY) {
+            for (int x = 0; x < image.getWidth(); x += stepX) {
+                if ((image.getRGB(x, y) >>> 24) < 250) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * Clips the window to its outline.
      *
      * <p>Without a picture that is the app's rounded card. With one the window <em>is</em> the
@@ -738,12 +802,11 @@ public class BalanceBoard extends JFrame {
      * rounding and no frame, because cutting a corner off the picture or stroking a line around it
      * would make it a picture inside a card again.
      *
-     * <p>Deliberately <em>not</em> done with per-pixel translucency
-     * ({@code setBackground(new Color(0,0,0,0))}). On Windows a per-pixel translucent window
-     * forces Java2D down a path where LCD text antialiasing emits glyphs with alpha 0: every label
-     * paints successfully but ends up completely transparent, so the window shows its gradient and
-     * any vector-drawn icons while all text silently vanishes. An opaque window clipped by
-     * {@code setShape} gives the same shaped look with normal text.
+     * <p>Note the second reason this exists. A window whose background is left fully transparent
+     * would be clipped to nothing on some platforms, and it is also the shape that keeps the
+     * app's own pixels out of the picture's business — for a see-through picture the window is
+     * additionally put on the per-pixel translucent path, see
+     * {@link #applyPictureTranslucency()}.
      *
      * @return true when the shape was applied
      */
@@ -1258,6 +1321,7 @@ public class BalanceBoard extends JFrame {
         backgroundImage = image;
         imageCrop = image == null ? null : config.getImageCrop();
         cropShape = image == null ? null : config.getEffectiveCropShape();
+        imageHasAlpha = hasTranslucency(image);
         balanceRegion = image == null ? null : config.getBalanceRegion();
         if (image != null && balanceRegion == null) {
             balanceRegion = AppConfig.defaultBalanceRegion();
@@ -1269,6 +1333,7 @@ public class BalanceBoard extends JFrame {
         // into the framed box instead.
         centerPanel.setVisible(image == null);
         updateChromeVisibility();
+        applyPictureTranslucency();
         board.revalidate();
         board.repaint();
     }
@@ -1506,6 +1571,10 @@ public class BalanceBoard extends JFrame {
             Graphics2D g2 = (Graphics2D) g.create();
             try {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                // Greyscale text on purpose: on a per-pixel translucent window LCD subpixel
+                // antialiasing can emit glyphs with alpha 0, which would make this line invisible.
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                        RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
                 g2.setFont(Theme.ui(Font.PLAIN, 10.5f));
                 FontMetrics fm = g2.getFontMetrics();
                 String text = fitText(g2, errorText, Math.max(60, getWidth() - 28));

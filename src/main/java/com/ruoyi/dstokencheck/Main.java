@@ -251,7 +251,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[14];
+        boolean[] pass = new boolean[15];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -357,6 +357,8 @@ public final class Main {
             pass[12] = checkCropMatchesWindow();
 
             pass[13] = checkIrregularCropMatchesWindow();
+
+            pass[14] = checkTransparentPicture();
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -1202,6 +1204,138 @@ public final class Main {
         } finally {
             //noinspection ResultOfMethodCallIgnored
             source.delete();
+            config.removeBackgroundImage();
+        }
+    }
+
+    /**
+     * A see-through picture must stay see-through: the window goes translucent, and the pixels the
+     * picture leaves empty are not painted at all.
+     *
+     * <p>This is the difference between "the desktop shows through my cut-out" and "my cut-out
+     * arrived as a black rectangle", which is what an opaque window does with transparency. Also
+     * checks the other side of it: a picture that merely <em>has</em> an alpha channel but no
+     * see-through pixels must stay on the plain opaque path.
+     */
+    private static boolean checkTransparentPicture() {
+        AppConfig config = new AppConfig();
+        config.removeBackgroundImage();
+        java.io.File cutout = new java.io.File(AppConfig.directory(), "selftest-cutout.png");
+        java.io.File opaqueAlpha = new java.io.File(AppConfig.directory(), "selftest-alpha-opaque.png");
+        final BalanceBoard[] ref = new BalanceBoard[1];
+        try {
+            // A transparent margin around an opaque plate.
+            java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
+                    200, 100, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            java.awt.Graphics2D g = img.createGraphics();
+            try {
+                g.setComposite(java.awt.AlphaComposite.Src);
+                g.setColor(new java.awt.Color(0, 0, 0, 0));
+                g.fillRect(0, 0, 200, 100);
+                g.setComposite(java.awt.AlphaComposite.SrcOver);
+                g.setColor(new java.awt.Color(0x20, 0x60, 0xE0));
+                g.fillRect(40, 20, 120, 60);
+            } finally {
+                g.dispose();
+            }
+            javax.imageio.ImageIO.write(img, "png", cutout);
+
+            // Same colour model, but nothing is actually see-through.
+            java.awt.image.BufferedImage solid = new java.awt.image.BufferedImage(
+                    200, 100, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            java.awt.Graphics2D sg = solid.createGraphics();
+            try {
+                sg.setColor(new java.awt.Color(0x20, 0x60, 0xE0));
+                sg.fillRect(0, 0, 200, 100);
+            } finally {
+                sg.dispose();
+            }
+            javax.imageio.ImageIO.write(solid, "png", opaqueAlpha);
+
+            config.storeBackgroundImage(cutout);
+            config.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.30f, 0.40f, 0.40f, 0.20f));
+            config.setBalanceTextColor(java.awt.Color.WHITE);
+            config.setBounds(new Rectangle(60, 60, 400, 200));
+            config.save();
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    DeepSeekClient demoClient = new DeepSeekClient();
+                    demoClient.setApiKey("sk-demo-000000000000000000000000");
+                    BalanceBoard b = new BalanceBoard(config, demoClient, null);
+                    b.setLocation(-4000, -4000);
+                    b.setVisible(true);
+                    b.start();
+                    ref[0] = b;
+                }
+            });
+            Thread.sleep(700);
+
+            Rectangle bounds = ref[0].getBounds();
+            boolean wentTranslucent = ref[0].getBackground().getAlpha() == 0;
+
+            // Painted into an alpha image: wherever the picture is transparent, nothing is painted,
+            // which is precisely the pixels the desktop will show through.
+            final java.awt.image.BufferedImage shot = new java.awt.image.BufferedImage(
+                    bounds.width, bounds.height, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    java.awt.Graphics2D g2 = shot.createGraphics();
+                    try {
+                        ref[0].paint(g2);
+                    } finally {
+                        g2.dispose();
+                    }
+                }
+            });
+            int margin = shot.getRGB(3, 3) >>> 24;
+            int plate = shot.getRGB(bounds.width / 2, bounds.height / 2) >>> 24;
+            boolean marginUnpainted = margin == 0;
+            boolean platePainted = plate == 255;
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].dispose();
+                }
+            });
+
+            // Now the same picture with no see-through pixels at all.
+            config.restoreBackgroundImageName("");
+            config.storeBackgroundImage(opaqueAlpha);
+            config.save();
+            final boolean[] stayedOpaque = {false};
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    DeepSeekClient demoClient = new DeepSeekClient();
+                    demoClient.setApiKey("sk-demo-000000000000000000000000");
+                    BalanceBoard b = new BalanceBoard(config, demoClient, null);
+                    b.setLocation(-4000, -4000);
+                    stayedOpaque[0] = b.getBackground().getAlpha() == 255;
+                    b.dispose();
+                }
+            });
+
+            boolean ok = wentTranslucent && marginUnpainted && platePainted && stayedOpaque[0];
+            System.out.println((ok ? "PASS" : "FAIL") + "  \u900f\u660e\u80cc\u666f\u56fe"
+                    + " (\u7a97\u53e3\u8f6c\u4e3a\u9010\u50cf\u7d20\u900f\u660e=" + wentTranslucent
+                    + ", \u900f\u660e\u5904\u672a\u7ed8\u5236=" + marginUnpainted
+                    + " (alpha=" + margin + ")"
+                    + ", \u4e0d\u900f\u660e\u5904\u5df2\u7ed8\u5236=" + platePainted
+                    + " (alpha=" + plate + ")"
+                    + ", \u65e0\u900f\u660e\u50cf\u7d20\u65f6\u4fdd\u6301\u4e0d\u900f\u660e=" + stayedOpaque[0] + ")");
+            return ok;
+        } catch (Exception e) {
+            System.out.println("FAIL  \u900f\u660e\u80cc\u666f\u56fe: " + e);
+            return false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            cutout.delete();
+            //noinspection ResultOfMethodCallIgnored
+            opaqueAlpha.delete();
             config.removeBackgroundImage();
         }
     }

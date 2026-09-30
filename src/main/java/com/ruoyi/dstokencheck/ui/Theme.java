@@ -97,4 +97,33 @@ public final class Theme {
         g2.setPaint(new GradientPaint(0, h - band, new Color(0, 0, 0, 0), 0, h, new Color(0, 0, 0, 135)));
         g2.fillRect(0, h - band, w, band);
     }
+
+    /**
+     * The chequered mat that means "nothing is drawn here".
+     *
+     * <p>Used behind a picture in the editor and its preview. Without it a transparent PNG simply
+     * looks like a dark picture, which is exactly the confusion this is here to prevent — the
+     * desktop will show through those pixels, the editor cannot show the desktop, so it shows the
+     * convention instead.
+     */
+    public static void paintCheckerboard(Graphics2D g2, int x, int y, int w, int h) {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        int cell = 10;
+        java.awt.Shape old = g2.getClip();
+        g2.clipRect(x, y, w, h);
+        g2.setColor(new Color(0x3C, 0x42, 0x4E));
+        g2.fillRect(x, y, w, h);
+        g2.setColor(new Color(0x2F, 0x35, 0x40));
+        for (int row = 0; row * cell < h; row++) {
+            for (int col = 0; col * cell < w; col++) {
+                if (((row + col) & 1) == 0) {
+                    continue;
+                }
+                g2.fillRect(x + col * cell, y + row * cell, cell, cell);
+            }
+        }
+        g2.setClip(old);
+    }
 }

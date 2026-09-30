@@ -21,7 +21,7 @@ import java.awt.geom.Line2D;
  */
 public class IconButton extends JButton {
 
-    public enum Glyph { CLOSE, REFRESH, PIN, MINIMISE, MENU }
+    public enum Glyph { CLOSE, REFRESH, PIN, MINIMISE, MENU, IMAGE }
 
     private final Glyph glyph;
     private boolean hover;
@@ -98,44 +98,108 @@ public class IconButton extends JButton {
             } else {
                 stroke = Theme.TEXT_DIM;
             }
-            g2.setColor(stroke);
-            g2.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-
-            float cx = w / 2f;
-            float cy = h / 2f;
-            float r = Math.min(w, h) * 0.26f;
-
-            switch (glyph) {
-                case CLOSE:
-                    g2.draw(new Line2D.Float(cx - r, cy - r, cx + r, cy + r));
-                    g2.draw(new Line2D.Float(cx + r, cy - r, cx - r, cy + r));
-                    break;
-                case REFRESH: {
-                    g2.draw(new java.awt.geom.Arc2D.Float(cx - r, cy - r, r * 2, r * 2, 40, 270,
-                            java.awt.geom.Arc2D.OPEN));
-                    // arrow head at the open end of the arc
-                    g2.draw(new Line2D.Float(cx + r * 0.78f, cy - r * 0.62f, cx + r * 1.22f, cy - r * 0.30f));
-                    g2.draw(new Line2D.Float(cx + r * 1.22f, cy - r * 0.30f, cx + r * 0.72f, cy - r * 0.05f));
-                    break;
-                }
-                case PIN:
-                    g2.draw(new Line2D.Float(cx + r * 0.9f, cy - r * 0.9f, cx - r * 0.1f, cy + r * 0.1f));
-                    g2.draw(new Line2D.Float(cx - r * 0.6f, cy - r * 0.35f, cx + r * 0.35f, cy + r * 0.6f));
-                    g2.draw(new Line2D.Float(cx - r * 0.35f, cy + r * 0.35f, cx - r * 0.9f, cy + r * 0.9f));
-                    break;
-                case MINIMISE:
-                    g2.draw(new Line2D.Float(cx - r, cy + r * 0.6f, cx + r, cy + r * 0.6f));
-                    break;
-                case MENU:
-                default:
-                    for (int i = -1; i <= 1; i++) {
-                        float y = cy + i * (r * 0.72f);
-                        g2.fill(new Ellipse2D.Float(cx - 1.5f, y - 1.5f, 3f, 3f));
-                    }
-                    break;
-            }
+            paintGlyph(g2, glyph, w, h, stroke);
         } finally {
             g2.dispose();
+        }
+    }
+
+    /**
+     * Draws one glyph centred in a {@code w x h} box.
+     *
+     * <p>Static and colour-parameterised so the same artwork can also serve as an
+     * {@link javax.swing.Icon} on an ordinary button — see {@link GlyphIcon}.
+     */
+    public static void paintGlyph(Graphics2D g2, Glyph glyph, int w, int h, Color color) {
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setColor(color);
+        g2.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+        float cx = w / 2f;
+        float cy = h / 2f;
+        float r = Math.min(w, h) * 0.26f;
+
+        switch (glyph) {
+            case CLOSE:
+                g2.draw(new Line2D.Float(cx - r, cy - r, cx + r, cy + r));
+                g2.draw(new Line2D.Float(cx + r, cy - r, cx - r, cy + r));
+                break;
+            case REFRESH: {
+                g2.draw(new java.awt.geom.Arc2D.Float(cx - r, cy - r, r * 2, r * 2, 40, 270,
+                        java.awt.geom.Arc2D.OPEN));
+                // arrow head at the open end of the arc
+                g2.draw(new Line2D.Float(cx + r * 0.78f, cy - r * 0.62f, cx + r * 1.22f, cy - r * 0.30f));
+                g2.draw(new Line2D.Float(cx + r * 1.22f, cy - r * 0.30f, cx + r * 0.72f, cy - r * 0.05f));
+                break;
+            }
+            case PIN:
+                g2.draw(new Line2D.Float(cx + r * 0.9f, cy - r * 0.9f, cx - r * 0.1f, cy + r * 0.1f));
+                g2.draw(new Line2D.Float(cx - r * 0.6f, cy - r * 0.35f, cx + r * 0.35f, cy + r * 0.6f));
+                g2.draw(new Line2D.Float(cx - r * 0.35f, cy + r * 0.35f, cx - r * 0.9f, cy + r * 0.9f));
+                break;
+            case MINIMISE:
+                g2.draw(new Line2D.Float(cx - r, cy + r * 0.6f, cx + r, cy + r * 0.6f));
+                break;
+            case IMAGE: {
+                // A framed picture: rectangle, horizon and a sun, drawn to the same radius as the
+                // other glyphs so it sits evenly next to text.
+                float rw = r * 1.35f;
+                float rh = r * 1.05f;
+                g2.draw(new java.awt.geom.Rectangle2D.Float(cx - rw, cy - rh, rw * 2, rh * 2));
+                g2.fill(new Ellipse2D.Float(cx - rw * 0.5f, cy - rh * 0.55f, r * 0.5f, r * 0.5f));
+                g2.draw(new Line2D.Float(cx - rw, cy + rh * 0.45f, cx - rw * 0.25f, cy - rh * 0.15f));
+                g2.draw(new Line2D.Float(cx - rw * 0.25f, cy - rh * 0.15f, cx + rw * 0.4f, cy + rh * 0.45f));
+                break;
+            }
+            case MENU:
+            default:
+                for (int i = -1; i <= 1; i++) {
+                    float y = cy + i * (r * 0.72f);
+                    g2.fill(new Ellipse2D.Float(cx - 1.5f, y - 1.5f, 3f, 3f));
+                }
+                break;
+        }
+    }
+
+    /**
+     * Puts a {@link Glyph} on any button that takes an icon.
+     *
+     * <p>It paints in the component's foreground colour, so the same glyph works on a light or a
+     * dark button without a second copy of the artwork.
+     */
+    public static class GlyphIcon implements javax.swing.Icon {
+
+        private final Glyph glyph;
+        private final int size;
+
+        public GlyphIcon(Glyph glyph, int size) {
+            this.glyph = glyph;
+            this.size = size;
+        }
+
+        @Override
+        public void paintIcon(java.awt.Component c, Graphics g, int x, int y) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.translate(x, y);
+                Color color = c == null || c.getForeground() == null ? Theme.TEXT : c.getForeground();
+                if (!c.isEnabled()) {
+                    color = Theme.TEXT_DIM;
+                }
+                paintGlyph(g2, glyph, size, size, color);
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        @Override
+        public int getIconWidth() {
+            return size;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return size;
         }
     }
 }

@@ -115,16 +115,34 @@ java -jar target\dstokencheck.jar
 
 ### 自定义背景图
 
-右键菜单 →「背景图…」打开设置窗口：
+右键菜单 →「背景图…」打开设置窗口（与主界面同一套深色卡片样式）：
 
 ![背景图设置](tools/background-dialog.png)
 
-1. **选择图片…** 挑一张本地图片（PNG / JPG / GIF / BMP）。图片会被**复制**到
-   `%USERPROFILE%\.dstokencheck\`，之后原图移动或删除都不影响使用。
-2. 在图片上**框出余额显示区域**：空白处拖拽＝新建区域，框内拖拽＝移动，四角拖拽＝缩放。
-   框内会实时预览余额效果。
-3. 需要时用「文字颜色…」改数字颜色，或「重置区域」回到默认位置。
-4. 点「确定」生效；点「取消」或直接关闭窗口则不保存任何改动（导入的图片也会被清理）。
+左边是图片和框选区域，右边是**小窗口预览**、**文字颜色**和操作提示。
+
+1. **选图片**：点左上角「选择图片…」，或者直接点一下左边的空白画布。
+   支持 PNG / JPG / GIF / BMP。图片会被**复制**到 `%USERPROFILE%\.dstokencheck\`，
+   之后原图移动或删除都不影响使用。
+2. **框区域**：在图上拖拽出余额显示的位置。框内会实时显示余额效果，区域之外会自动压暗。
+   框上八个方块都能拖，光标形状会告诉你在拖哪条边。
+3. **调颜色**：右侧 12 个色块一点即换（当前颜色带白圈），也可以在输入框里填 `#RRGGBB`。
+4. **看效果**：右侧「小窗口预览」就是保存后的样子——同一套绘制代码，不是示意图。
+5. 点「**保存并应用**」生效。没选图片时该按钮是灰的；点「取消」、按 `Esc` 或直接关窗
+   都不会保存任何改动（本次导入的图片副本也会被清理）。
+
+操作方式：
+
+| 操作 | 方式 |
+| --- | --- |
+| 新建区域 | 在图片空白处拖拽 |
+| 移动区域 | 在框内拖拽 |
+| 缩放区域 | 拖拽八个方块（四角＋四边中点） |
+| 微调位置 | 方向键（`Shift` + 方向键步长 10 像素） |
+| 缩放画布 | `Ctrl` + 滚轮，或「适应窗口」/「1:1」 |
+| 关闭 | `Esc` 取消，`Enter` 等同「保存并应用」 |
+
+底部还会实时显示区域占比，以及这个区域在小窗口里大约是多少像素。
 
 确定后小窗口的整体背景换成该图片，**原本的余额数字就显示在框定的区域内**（连同币种、
 可用 token 估算、赠送与其他币种合并成的小字一行），其余界面保持不变：
@@ -234,7 +252,7 @@ java -jar target\dstokencheck.jar --autostart status
 java -jar target\dstokencheck.jar --autostart on
 java -jar target\dstokencheck.jar --autostart off
 
-:: 自测：拖动、缩放、最小尺寸、菜单项、字体缩放、刷新下限、背景图与余额框定区域等
+:: 自测：拖动、缩放、最小尺寸、菜单项、字体缩放、刷新下限、背景图设置与编辑器等
 java -jar target\dstokencheck.jar --selftest
 
 :: 将窗口离屏渲染为 PNG
@@ -291,11 +309,14 @@ src/main/java/com/ruoyi/dstokencheck/
 │   ├── Http.java                 基于 HttpURLConnection 的 HTTP 封装
 │   └── DeepSeekClient.java       余额接口调用与 Key 掩码显示
 └── ui/
-    ├── Theme.java                颜色与字体（自动选择中文字体）
+    ├── Theme.java                颜色、字体与共用的小段绘制代码
+    ├── CardPanel.java            圆角渐变卡片（各窗口共用的底）
+    ├── FlatButton.java           扁平的圆角按钮（主要／次要两种）
     ├── IconButton.java           自绘矢量图标按钮
     ├── ApiKeyDialog.java         无边框登录窗口
+    ├── BackgroundLayout.java     图片摆放与框选区域换算（小窗口、编辑器、预览共用）
     ├── BalanceTextRenderer.java  把余额数字缩放到任意方框内绘制
-    ├── BackgroundRegionDialog.java  选图片 + 框定余额显示区域
+    ├── BackgroundRegionDialog.java  背景图编辑器：选图、框区域、调颜色、实时预览
     └── BalanceBoard.java         无边框主窗口（自实现拖动、缩放、置顶、退出登录）
 
 tools/                            开发期工具，不影响程序运行

@@ -7,6 +7,7 @@ import com.ruoyi.dstokencheck.model.Wallet;
 import com.ruoyi.dstokencheck.net.DeepSeekClient;
 import com.ruoyi.dstokencheck.security.SecretStore;
 import com.ruoyi.dstokencheck.ui.ApiKeyDialog;
+import com.ruoyi.dstokencheck.ui.BackgroundRegionDialog;
 import com.ruoyi.dstokencheck.ui.BalanceBoard;
 import com.ruoyi.dstokencheck.util.Log;
 
@@ -250,7 +251,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[11];
+        boolean[] pass = new boolean[12];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -350,6 +351,8 @@ public final class Main {
             pass[9] = checkBackgroundConfig();
 
             pass[10] = checkBalanceSitsInsideFramedRegion();
+
+            pass[11] = checkBackgroundRegionEditor();
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -550,7 +553,7 @@ public final class Main {
         return ok;
     }
 
-    private static void clickOnEdt(final JMenuItem item) throws Exception {
+    private static void clickOnEdt(final javax.swing.AbstractButton item) throws Exception {
         SwingUtilities.invokeAndWait(new Runnable() {
             @Override
             public void run() {
@@ -728,6 +731,174 @@ public final class Main {
             source.delete();
             config.removeBackgroundImage();
         }
+    }
+
+    /**
+     * Drives the background editor the way a user does: open it, drag a box on the picture, save.
+     *
+     * <p>The dialog is a window of hand-painted, hand-hit-tested controls, and the part that can
+     * break silently is the mapping between a drag in screen coordinates and the normalised region
+     * that ends up in the settings. So this does not poke at internals — it posts real mouse events
+     * at the canvas and then reads what the widget would be told.
+     *
+     * <p>Also checks the obvious dead end: with no picture chosen there is nothing to save, and the
+     * save button has to say so.
+     */
+    private static boolean checkBackgroundRegionEditor() {
+        AppConfig config = new AppConfig();
+        config.removeBackgroundImage();
+        java.io.File source = new java.io.File(AppConfig.directory(), "selftest-editor.png");
+
+        boolean disabledWithoutImage = false;
+        boolean canvasFound = false;
+        boolean saved = false;
+        boolean regionChanged = false;
+        boolean regionValid = false;
+        try {
+            // ---- no picture yet: saving must not be possible ----
+            final BackgroundRegionDialog[] opened = new BackgroundRegionDialog[1];
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    opened[0] = showEditor(config);
+                }
+            });
+            Thread.sleep(400);
+            javax.swing.AbstractButton save = findButton(opened[0].getContentPane(),
+                    "\u4fdd\u5b58\u5e76\u5e94\u7528");
+            disabledWithoutImage = save != null && !save.isEnabled();
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    opened[0].dispose();
+                }
+            });
+
+            // ---- with a picture: drag a box and keep it ----
+            writeTestImage(source, 300, 150, new java.awt.Color(0x40, 0x40, 0x40));
+            config.storeBackgroundImage(source);
+            config.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.20f, 0.30f, 0.60f, 0.40f));
+            config.save();
+
+            final BackgroundRegionDialog[] edited = new BackgroundRegionDialog[1];
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    edited[0] = showEditor(config);
+                }
+            });
+            Thread.sleep(600);
+
+            java.awt.Component canvas = findByName(edited[0].getContentPane(), "ImageCanvas");
+            if (canvas != null && canvas.isShowing() && canvas.getWidth() > 20) {
+                canvasFound = true;
+                // From the top-left corner (outside both the picture and the current box) to the
+                // middle: that is a "new region" drag, and it must replace the stored one.
+                java.awt.Point origin = canvas.getLocationOnScreen();
+                int midX = canvas.getWidth() / 2;
+                int midY = canvas.getHeight() / 2;
+                post(canvas, java.awt.event.MouseEvent.MOUSE_PRESSED,
+                        new java.awt.Point(origin.x + 6, origin.y + 6));
+                Thread.sleep(80);
+                post(canvas, java.awt.event.MouseEvent.MOUSE_DRAGGED,
+                        new java.awt.Point(origin.x + midX, origin.y + midY));
+                Thread.sleep(80);
+                post(canvas, java.awt.event.MouseEvent.MOUSE_RELEASED,
+                        new java.awt.Point(origin.x + midX, origin.y + midY));
+                Thread.sleep(150);
+            }
+
+            javax.swing.AbstractButton save2 = findButton(edited[0].getContentPane(),
+                    "\u4fdd\u5b58\u5e76\u5e94\u7528");
+            if (save2 != null && save2.isEnabled()) {
+                clickOnEdt(save2);
+                Thread.sleep(250);
+            }
+            saved = edited[0].isConfirmed();
+
+            java.awt.geom.Rectangle2D.Float r = config.getBalanceRegion();
+            regionValid = r != null
+                    && r.x >= 0f && r.y >= 0f
+                    && r.x + r.width <= 1.001f && r.y + r.height <= 1.001f
+                    && r.width > 0.01f && r.height > 0.01f;
+            regionChanged = r != null
+                    && (Math.abs(r.x - 0.20f) > 0.02f || Math.abs(r.y - 0.30f) > 0.02f
+                    || Math.abs(r.width - 0.60f) > 0.02f || Math.abs(r.height - 0.40f) > 0.02f);
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    if (edited[0] != null) {
+                        edited[0].dispose();
+                    }
+                }
+            });
+
+            boolean ok = disabledWithoutImage && canvasFound && saved && regionChanged && regionValid;
+            System.out.println((ok ? "PASS" : "FAIL") + "  \u80cc\u666f\u56fe\u7f16\u8f91\u5668"
+                    + " (\u65e0\u56fe\u65f6\u4e0d\u53ef\u4fdd\u5b58=" + disabledWithoutImage
+                    + ", \u627e\u5230\u753b\u5e03=" + canvasFound
+                    + ", \u62d6\u62fd\u540e\u4fdd\u5b58\u6210\u529f=" + saved
+                    + ", \u533a\u57df\u5df2\u6539\u53d8=" + regionChanged
+                    + ", \u533a\u57df\u5408\u6cd5=" + regionValid + ")");
+            return ok;
+        } catch (Exception e) {
+            System.out.println("FAIL  \u80cc\u666f\u56fe\u7f16\u8f91\u5668: " + e);
+            return false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            source.delete();
+            config.removeBackgroundImage();
+        }
+    }
+
+    /** Opens the editor non-modally, so the test keeps control of the event thread. */
+    private static BackgroundRegionDialog showEditor(AppConfig config) {
+        BackgroundRegionDialog dialog = new BackgroundRegionDialog(null, config,
+                new BackgroundRegionDialog.PreviewData("DeepSeek \u4f59\u989d", "\u00a587.65", "CNY", "", ""));
+        dialog.setModal(false);
+        dialog.setVisible(true);
+        return dialog;
+    }
+
+    /** Depth-first search for the first component whose class has this simple name. */
+    private static java.awt.Component findByName(java.awt.Container root, String simpleName) {
+        if (root == null) {
+            return null;
+        }
+        for (java.awt.Component c : root.getComponents()) {
+            if (c.getClass().getSimpleName().equals(simpleName)) {
+                return c;
+            }
+            if (c instanceof java.awt.Container) {
+                java.awt.Component found = findByName((java.awt.Container) c, simpleName);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Finds a button by its exact label, or null when there is no such button. */
+    private static javax.swing.AbstractButton findButton(java.awt.Container root, String label) {
+        if (root == null) {
+            return null;
+        }
+        for (java.awt.Component c : root.getComponents()) {
+            if (c instanceof javax.swing.AbstractButton
+                    && label.equals(((javax.swing.AbstractButton) c).getText())) {
+                return (javax.swing.AbstractButton) c;
+            }
+            if (c instanceof java.awt.Container) {
+                javax.swing.AbstractButton found =
+                        findButton((java.awt.Container) c, label);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     /** Writes a flat-colour PNG, used as a stand-in for a user's background image. */

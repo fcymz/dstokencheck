@@ -18,7 +18,6 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
-import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -54,7 +53,6 @@ import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.event.AWTEventListener;
-import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -1148,8 +1146,10 @@ public class BalanceBoard extends JFrame {
 
     /** Opens the image picker / region framer, and applies the result when it is confirmed. */
     private void openBackgroundDialog() {
-        BackgroundRegionDialog dialog = new BackgroundRegionDialog(
-                this, config, amountLabel.getText(), regionSubtitle);
+        BackgroundRegionDialog.PreviewData preview = new BackgroundRegionDialog.PreviewData(
+                titleLabel.getText(), amountLabel.getText(), regionSubtitle,
+                accountLabel.getText(), statusLabel.getText());
+        BackgroundRegionDialog dialog = new BackgroundRegionDialog(this, config, preview);
         dialog.setVisible(true);
         if (!dialog.isConfirmed()) {
             return;
@@ -1227,15 +1227,10 @@ public class BalanceBoard extends JFrame {
         private Rectangle imageBounds() {
             int w = Math.max(1, getWidth());
             int h = Math.max(1, getHeight());
-            if (backgroundImage == null || backgroundImage.getWidth() <= 0
-                    || backgroundImage.getHeight() <= 0) {
+            if (backgroundImage == null) {
                 return new Rectangle(0, 0, w, h);
             }
-            double scale = Math.max(w / (double) backgroundImage.getWidth(),
-                    h / (double) backgroundImage.getHeight());
-            int dw = (int) Math.round(backgroundImage.getWidth() * scale);
-            int dh = (int) Math.round(backgroundImage.getHeight() * scale);
-            return new Rectangle((w - dw) / 2, (h - dh) / 2, dw, dh);
+            return BackgroundLayout.coverRect(backgroundImage.getWidth(), backgroundImage.getHeight(), w, h);
         }
 
         /**
@@ -1243,23 +1238,13 @@ public class BalanceBoard extends JFrame {
          *
          * <p>The region is stored relative to the image, so it travels through the same cover
          * transform the image does. Whatever a very different aspect ratio pushes outside the card
-         * is trimmed here rather than silently clipped at paint time.
+         * is trimmed by the shared layout, exactly as it is in the region editor's preview.
          */
         Rectangle2D.Float regionOnCard() {
             if (backgroundImage == null || region == null) {
                 return null;
             }
-            Rectangle b = imageBounds();
-            float x = (float) (b.x + region.x * b.width);
-            float y = (float) (b.y + region.y * b.height);
-            float x2 = Math.min((float) (x + region.width * b.width), getWidth());
-            float y2 = Math.min((float) (y + region.height * b.height), getHeight());
-            x = Math.max(x, 0f);
-            y = Math.max(y, 0f);
-            if (x2 - x < 1f || y2 - y < 1f) {
-                return null;
-            }
-            return new Rectangle2D.Float(x, y, x2 - x, y2 - y);
+            return BackgroundLayout.regionOn(region, imageBounds(), getWidth(), getHeight());
         }
 
         @Override
@@ -1301,8 +1286,13 @@ public class BalanceBoard extends JFrame {
                 g2.setClip(clip);
                 if (backgroundImage != null) {
                     Rectangle img = imageBounds();
+                    // Smooth scaling, matching the editor's preview: a photo is usually many times
+                    // the size of the card, and the default nearest-neighbour looks shattered.
+                    g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                            RenderingHints.VALUE_INTERPOLATION_BILINEAR);
                     g2.drawImage(backgroundImage, img.x, img.y, img.width, img.height, null);
-                    paintEdgeScrim(g2, w, h);
+                    // Keeps the title bar and footer readable over a bright photo.
+                    Theme.paintEdgeScrim(g2, w, h);
                 } else {
                     g2.setPaint(new GradientPaint(0, 0, Theme.BG_TOP, 0, h, Theme.BG_BOTTOM));
                     g2.fillRect(0, 0, w, h);
@@ -1319,21 +1309,6 @@ public class BalanceBoard extends JFrame {
             } finally {
                 g2.dispose();
             }
-        }
-
-        /**
-         * Fades the top and bottom edges of a user image towards black.
-         *
-         * <p>The title bar and the footer sit on top of whatever the user chose, and a bright photo
-         * would otherwise leave the account line unreadable. Gradients rather than flat fills, so
-         * the picture is not boxed in by two obvious bars.
-         */
-        private void paintEdgeScrim(Graphics2D g2, int w, int h) {
-            int band = Math.max(16, Math.min(h / 3, 64));
-            g2.setPaint(new GradientPaint(0, 0, new Color(0, 0, 0, 125), 0, band, new Color(0, 0, 0, 0)));
-            g2.fillRect(0, 0, w, band);
-            g2.setPaint(new GradientPaint(0, h - band, new Color(0, 0, 0, 0), 0, h, new Color(0, 0, 0, 135)));
-            g2.fillRect(0, h - band, w, band);
         }
     }
 }

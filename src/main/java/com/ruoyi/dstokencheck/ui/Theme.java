@@ -2,6 +2,8 @@ package com.ruoyi.dstokencheck.ui;
 
 import java.awt.Color;
 import java.awt.Font;
+import java.awt.GradientPaint;
+import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.util.HashSet;
 import java.util.Set;
@@ -24,6 +26,12 @@ public final class Theme {
     public static final Color DANGER = new Color(240, 104, 104);
     public static final Color FIELD_BG = new Color(28, 35, 50);
     public static final Color BUTTON_BG = new Color(56, 116, 214);
+    /** Raised blocks inside a card (toolbars, sidebar sections). */
+    public static final Color SURFACE = new Color(25, 32, 45);
+    /** The same block under the pointer. */
+    public static final Color SURFACE_HOVER = new Color(35, 44, 61);
+    /** Deep backdrop behind a picture, so a light image has a frame to sit in. */
+    public static final Color CANVAS = new Color(11, 14, 21);
 
     private static final String UI_FAMILY = pickFamily(
             "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC",
@@ -73,5 +81,20 @@ public final class Theme {
     /** Same color at a different alpha. */
     public static Color alpha(Color c, int a) {
         return new Color(c.getRed(), c.getGreen(), c.getBlue(), Math.max(0, Math.min(255, a)));
+    }
+
+    /**
+     * Fades the top and bottom edges of a user image towards black.
+     *
+     * <p>The widget's own title bar and footer sit on top of whatever picture the user chose, and a
+     * bright photo would otherwise leave them unreadable. Gradients rather than flat fills, so the
+     * picture is not boxed in by two obvious bars. Shared by the widget and its miniature preview.
+     */
+    public static void paintEdgeScrim(Graphics2D g2, int w, int h) {
+        int band = Math.max(16, Math.min(h / 3, 64));
+        g2.setPaint(new GradientPaint(0, 0, new Color(0, 0, 0, 125), 0, band, new Color(0, 0, 0, 0)));
+        g2.fillRect(0, 0, w, band);
+        g2.setPaint(new GradientPaint(0, h - band, new Color(0, 0, 0, 0), 0, h, new Color(0, 0, 0, 135)));
+        g2.fillRect(0, h - band, w, band);
     }
 }

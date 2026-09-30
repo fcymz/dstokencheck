@@ -7,7 +7,6 @@ import com.ruoyi.dstokencheck.security.SecretStore;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
@@ -17,18 +16,14 @@ import javax.swing.JPasswordField;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import java.awt.BorderLayout;
-import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Frame;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.Point;
-import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
@@ -59,7 +54,8 @@ public class ApiKeyDialog extends JDialog {
     private final JLabel errorLabel = new JLabel(" ");
     private final JLabel hintLabel = new JLabel(" ");
     private final JLabel linkLabel = new JLabel("\u53bb platform.deepseek.com \u83b7\u53d6 API Key");
-    private final JButton submitButton = new JButton("\u767b\u5f55");
+    private final FlatButton submitButton =
+            new FlatButton("\u767b\u5f55", FlatButton.Kind.PRIMARY);
 
     private boolean succeeded;
     private boolean busy;
@@ -76,7 +72,7 @@ public class ApiKeyDialog extends JDialog {
         // the per-pixel translucency path, where LCD text antialiasing renders glyphs fully
         // transparent and the whole form appears blank.
         setBackground(Theme.BG_BOTTOM);
-        setContentPane(new CardPanel());
+        setContentPane(new CardPanel(ARC));
 
         buildUi();
         pack();
@@ -174,12 +170,6 @@ public class ApiKeyDialog extends JDialog {
         JPanel south = new JPanel(new GridLayout(2, 1, 0, 8));
         south.setOpaque(false);
 
-        submitButton.setFont(Theme.ui(Font.BOLD, 12f));
-        submitButton.setForeground(Color.WHITE);
-        submitButton.setBackground(Theme.BUTTON_BG);
-        submitButton.setFocusPainted(false);
-        submitButton.setBorder(BorderFactory.createEmptyBorder(9, 12, 9, 12));
-        submitButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         submitButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -332,31 +322,5 @@ public class ApiKeyDialog extends JDialog {
                 setLocation(windowOrigin.x + (now.x - dragOrigin.x), windowOrigin.y + (now.y - dragOrigin.y));
             }
         });
-    }
-
-    /** Rounded gradient card behind the form. */
-    private static class CardPanel extends JPanel {
-        CardPanel() {
-            setOpaque(false);
-        }
-
-        @Override
-        protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            try {
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                int w = getWidth();
-                int h = getHeight();
-                java.awt.Shape shape = new RoundRectangle2D.Float(0, 0, w - 1, h - 1, ARC, ARC);
-                g2.setClip(shape);
-                g2.setPaint(new java.awt.GradientPaint(0, 0, Theme.BG_TOP, 0, h, Theme.BG_BOTTOM));
-                g2.fillRect(0, 0, w, h);
-                g2.setClip(null);
-                g2.setColor(Theme.alpha(Theme.ACCENT, 90));
-                g2.draw(shape);
-            } finally {
-                g2.dispose();
-            }
-        }
     }
 }

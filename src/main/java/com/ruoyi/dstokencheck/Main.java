@@ -250,7 +250,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[9];
+        boolean[] pass = new boolean[11];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -346,6 +346,10 @@ public final class Main {
             pass[7] = checkFontScaleMenu(b, menu);
 
             pass[8] = checkRefreshFloor(menu);
+
+            pass[9] = checkBackgroundConfig();
+
+            pass[10] = checkBalanceSitsInsideFramedRegion();
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -567,6 +571,178 @@ public final class Main {
                 + ", \u4f20\u5165 1 \u79d2\u540e\u5f97\u5230=" + probe.getRefreshSeconds()
                 + ", \u83dc\u5355\u9879=" + menuHas5 + ")");
         return ok;
+    }
+
+    /**
+     * The custom background must survive a save/reload cycle, and the framed region must be pinned
+     * inside the image even when the stored numbers are nonsense.
+     *
+     * <p>Also proves that removing a background really deletes the copy the app made, rather than
+     * leaving an orphaned image in the user's config directory.
+     */
+    private static boolean checkBackgroundConfig() {
+        AppConfig probe = new AppConfig();
+        // Start from a known state: an earlier run may have left a background behind.
+        probe.removeBackgroundImage();
+        java.io.File source = new java.io.File(AppConfig.directory(), "selftest-source.png");
+        try {
+            writeTestImage(source, 300, 150, new java.awt.Color(0x40, 0x40, 0x40));
+            java.io.File stored = probe.storeBackgroundImage(source);
+            probe.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.20f, 0.30f, 0.60f, 0.40f));
+            probe.setBalanceTextColor(new java.awt.Color(0xFF, 0xCC, 0x00));
+            probe.save();
+
+            AppConfig reloaded = new AppConfig();
+            java.awt.geom.Rectangle2D.Float r = reloaded.getBalanceRegion();
+            boolean roundTrip = reloaded.hasBackgroundImage()
+                    && stored != null && stored.isFile()
+                    && r != null
+                    && Math.abs(r.x - 0.20f) < 0.002f && Math.abs(r.y - 0.30f) < 0.002f
+                    && Math.abs(r.width - 0.60f) < 0.002f && Math.abs(r.height - 0.40f) < 0.002f
+                    && reloaded.getBalanceTextColor().equals(new java.awt.Color(0xFF, 0xCC, 0x00));
+
+            // A region that would hang off the edge has to be pulled back inside.
+            reloaded.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.9f, 0.9f, 0.5f, 0.5f));
+            java.awt.geom.Rectangle2D.Float clamped = reloaded.getBalanceRegion();
+            boolean inside = clamped.x >= 0f && clamped.y >= 0f
+                    && clamped.x + clamped.width <= 1.001f
+                    && clamped.y + clamped.height <= 1.001f;
+
+            java.io.File copy = reloaded.getBackgroundImageFile();
+            reloaded.removeBackgroundImage();
+            boolean removed = !reloaded.hasBackgroundImage()
+                    && (copy == null || !copy.exists());
+
+            boolean ok = roundTrip && inside && removed;
+            System.out.println((ok ? "PASS" : "FAIL") + "  \u80cc\u666f\u56fe\u8bbe\u7f6e"
+                    + " (\u4fdd\u5b58/\u8bfb\u56de=" + roundTrip
+                    + ", \u8d8a\u754c\u533a\u57df\u88ab\u6536\u56de=" + inside
+                    + ", \u5220\u9664\u540e\u65e0\u6b8b\u7559=" + removed + ")");
+            return ok;
+        } catch (Exception e) {
+            System.out.println("FAIL  \u80cc\u666f\u56fe\u8bbe\u7f6e: " + e);
+            return false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            source.delete();
+        }
+    }
+
+    /**
+     * The point of the feature: with a background image configured, the balance figure must be
+     * painted inside the framed box and nowhere else.
+     *
+     * <p>Checked on the pixels the widget actually produces. The region is deliberately off-centre,
+     * so text drawn at the old fixed spot would land outside it and fail the test.
+     */
+    private static boolean checkBalanceSitsInsideFramedRegion() {
+        final int cardW = 300;
+        final int cardH = 150;
+        final float rx = 0.52f;
+        final float ry = 0.32f;
+        final float rw = 0.44f;
+        final float rh = 0.34f;
+
+        AppConfig config = new AppConfig();
+        java.io.File source = new java.io.File(AppConfig.directory(), "selftest-region.png");
+        final BalanceBoard[] ref = new BalanceBoard[1];
+        try {
+            writeTestImage(source, cardW, cardH, new java.awt.Color(0x40, 0x40, 0x40));
+            config.storeBackgroundImage(source);
+            config.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(rx, ry, rw, rh));
+            config.setBalanceTextColor(java.awt.Color.WHITE);
+            config.save();
+
+            DeepSeekClient demoClient = new DeepSeekClient();
+            demoClient.setApiKey("sk-demo-000000000000000000000000");
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    BalanceBoard b = new BalanceBoard(config, demoClient, null);
+                    // Off-screen: this runs while the selftest window is on the desktop.
+                    b.setLocation(-4000, -4000);
+                    b.setSize(cardW, cardH);
+                    b.setVisible(true);
+                    b.start();
+                    ref[0] = b;
+                }
+            });
+            // Let the first (immediate) refresh put a balance into the frame.
+            Thread.sleep(700);
+
+            java.awt.image.BufferedImage shot = new java.awt.image.BufferedImage(
+                    cardW, cardH, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    java.awt.Graphics2D g = shot.createGraphics();
+                    try {
+                        ref[0].paint(g);
+                    } finally {
+                        g.dispose();
+                    }
+                }
+            });
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].dispose();
+                }
+            });
+
+            // The image is exactly the size of the card, so the cover transform is the identity.
+            int x0 = Math.round(rx * cardW);
+            int y0 = Math.round(ry * cardH);
+            int x1 = x0 + Math.round(rw * cardW);
+            int y1 = y0 + Math.round(rh * cardH);
+
+            int bright = 0;
+            int outside = 0;
+            for (int y = 0; y < cardH; y++) {
+                for (int x = 0; x < cardW; x++) {
+                    int rgb = shot.getRGB(x, y);
+                    int r = (rgb >> 16) & 0xFF;
+                    int g = (rgb >> 8) & 0xFF;
+                    int b = rgb & 0xFF;
+                    // White-ish: the balance figure (and its shadow is black, so it is excluded).
+                    if (r > 200 && g > 200 && b > 200) {
+                        bright++;
+                        if (x < x0 || x >= x1 || y < y0 || y >= y1) {
+                            outside++;
+                        }
+                    }
+                }
+            }
+
+            boolean ok = bright > 50 && outside == 0;
+            System.out.println((ok ? "PASS" : "FAIL") + "  \u4f59\u989d\u6570\u5b57\u843d\u5728\u6846\u5b9a\u533a\u57df\u5185"
+                    + " (\u533a\u57df=" + x0 + "," + y0 + "-" + x1 + "," + y1
+                    + ", \u4eae\u8272\u50cf\u7d20=" + bright
+                    + ", \u533a\u57df\u5916\u4eae\u8272\u50cf\u7d20=" + outside + ")");
+            return ok;
+        } catch (Exception e) {
+            System.out.println("FAIL  \u4f59\u989d\u6570\u5b57\u843d\u5728\u6846\u5b9a\u533a\u57df\u5185: " + e);
+            return false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            source.delete();
+            config.removeBackgroundImage();
+        }
+    }
+
+    /** Writes a flat-colour PNG, used as a stand-in for a user's background image. */
+    private static void writeTestImage(java.io.File target, int w, int h, java.awt.Color color)
+            throws java.io.IOException {
+        java.awt.image.BufferedImage img =
+                new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = img.createGraphics();
+        try {
+            g.setColor(color);
+            g.fillRect(0, 0, w, h);
+        } finally {
+            g.dispose();
+        }
+        javax.imageio.ImageIO.write(img, "png", target);
     }
 
     /** Presses at a screen point, drags by (dx,dy) in steps, then releases. */

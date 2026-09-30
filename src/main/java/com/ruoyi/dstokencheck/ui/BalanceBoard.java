@@ -12,6 +12,7 @@ import com.ruoyi.dstokencheck.model.BalanceSnapshot;
 import com.ruoyi.dstokencheck.model.Wallet;
 import com.ruoyi.dstokencheck.net.DeepSeekClient;
 
+import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -31,6 +32,8 @@ import javax.swing.JSlider;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.Timer;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import java.awt.AWTEvent;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
@@ -43,6 +46,7 @@ import java.awt.Font;
 import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GraphicsConfiguration;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
 import java.awt.Point;
@@ -54,11 +58,17 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 /**
  * The desktop widget: a borderless window showing the DeepSeek balance.
@@ -117,9 +127,20 @@ public class BalanceBoard extends JFrame {
     private final JLabel statusLabel = new JLabel(" ");
     private final JLabel accountLabel = new JLabel(" ");
     private final JPanel extraPanel = new JPanel();
+    /** Holds the amount / currency column; hidden while a custom background is in use. */
+    private final JPanel centerPanel = new JPanel();
+    /** Account + status, pinned to the bottom in both modes. */
+    private final JPanel footerPanel = new JPanel();
     private final IconButton pinButton = new IconButton(IconButton.Glyph.PIN, "\u7f6e\u9876\u5f00\u5173");
     private final IconButton refreshButton = new IconButton(IconButton.Glyph.REFRESH, "\u7acb\u5373\u5237\u65b0");
     private final IconButton closeButton = new IconButton(IconButton.Glyph.CLOSE, "\u9690\u85cf\u7a97\u53e3");
+
+    /** The user's background image, or null when the built-in gradient card is used. */
+    private BufferedImage backgroundImage;
+    /** Normalised box on that image where the balance is drawn. */
+    private Rectangle2D.Float balanceRegion;
+    /** Compact "CNY ≈ 12.4M tokens · 含赠送 …" line shown inside the framed box. */
+    private String regionSubtitle = "";
 
     private final Timer refreshTimer;
     /** Periodically puts the widget back at the front of the topmost band. See reassertTopMost(). */
@@ -154,6 +175,9 @@ public class BalanceBoard extends JFrame {
         buildUi();
 
         applyOpacity();
+
+        // A background chosen in an earlier run must come back without any user action.
+        applyConfiguredBackground();
 
         // Keep the rounded shape in step with the window as the user resizes it.
         addComponentListener(new java.awt.event.ComponentAdapter() {
@@ -234,9 +258,8 @@ public class BalanceBoard extends JFrame {
         board.add(titleBar, BorderLayout.NORTH);
 
         // ---- big number ----
-        JPanel center = new JPanel();
-        center.setOpaque(false);
-        center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
+        centerPanel.setOpaque(false);
+        centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
 
         amountLabel.setForeground(Theme.TEXT);
         amountLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -248,21 +271,21 @@ public class BalanceBoard extends JFrame {
         extraPanel.setLayout(new BoxLayout(extraPanel, BoxLayout.Y_AXIS));
         extraPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        center.add(Box.createVerticalGlue());
-        center.add(amountLabel);
-        center.add(currencyLabel);
-        center.add(extraPanel);
-        center.add(Box.createVerticalGlue());
-        board.add(center, BorderLayout.CENTER);
+        centerPanel.add(Box.createVerticalGlue());
+        centerPanel.add(amountLabel);
+        centerPanel.add(currencyLabel);
+        centerPanel.add(extraPanel);
+        centerPanel.add(Box.createVerticalGlue());
+        board.add(centerPanel, BorderLayout.CENTER);
 
         // ---- footer ----
-        JPanel footer = new JPanel(new GridLayout(2, 1, 0, 1));
-        footer.setOpaque(false);
+        footerPanel.setLayout(new GridLayout(2, 1, 0, 1));
+        footerPanel.setOpaque(false);
         accountLabel.setForeground(Theme.alpha(Theme.ACCENT_SOFT, 200));
         statusLabel.setForeground(Theme.TEXT_DIM);
-        footer.add(accountLabel);
-        footer.add(statusLabel);
-        board.add(footer, BorderLayout.SOUTH);
+        footerPanel.add(accountLabel);
+        footerPanel.add(statusLabel);
+        board.add(footerPanel, BorderLayout.SOUTH);
 
         refreshButton.addActionListener(e -> refresh());
         pinButton.addActionListener(e -> toggleAlwaysOnTop());
@@ -414,6 +437,39 @@ public class BalanceBoard extends JFrame {
                 Math.max(minW(), Math.round(420 * config.getFontScale())),
                 Math.max(minH(), Math.round(220 * config.getFontScale()))));
         menu.add(bigItem);
+
+        menu.add(new JSeparator());
+
+        JMenuItem backgroundItem = new JMenuItem("\u80cc\u666f\u56fe\u2026");
+        backgroundItem.setToolTipText("\u9009\u62e9\u4e00\u5f20\u56fe\u7247\uff0c\u5e76\u6846\u5b9a\u4f59\u989d\u663e\u793a\u7684\u4f4d\u7f6e");
+        // Deferred: this opens a modal dialog, and a nested event loop started while the popup is
+        // still on screen can leave the menu stuck behind (or in front of) the dialog.
+        backgroundItem.addActionListener(e -> SwingUtilities.invokeLater(this::openBackgroundDialog));
+        menu.add(backgroundItem);
+
+        final JMenuItem clearBackgroundItem = new JMenuItem("\u6062\u590d\u9ed8\u8ba4\u80cc\u666f");
+        clearBackgroundItem.setToolTipText("\u79fb\u9664\u81ea\u5b9a\u4e49\u80cc\u666f\u56fe\uff0c\u56de\u5230\u5185\u7f6e\u6df1\u8272\u5361\u7247");
+        clearBackgroundItem.addActionListener(e -> clearBackgroundImage());
+        menu.add(clearBackgroundItem);
+
+        // Whether there is a background to remove is only knowable while the menu is open; the
+        // config file is the single source of truth, so it is read at that moment.
+        menu.addPopupMenuListener(new PopupMenuListener() {
+            @Override
+            public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+                clearBackgroundItem.setEnabled(config.hasBackgroundImage());
+            }
+
+            @Override
+            public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+                // nothing to do
+            }
+
+            @Override
+            public void popupMenuCanceled(PopupMenuEvent e) {
+                // nothing to do
+            }
+        });
 
         menu.add(new JSeparator());
 
@@ -768,18 +824,31 @@ public class BalanceBoard extends JFrame {
 
         extraPanel.removeAll();
 
+        // Collected once: the same lines are shown as extra rows in the normal layout and joined
+        // into a single caption inside the framed box in custom-background mode.
+        List<String> info = new ArrayList<String>();
         BigDecimal bonus = snap.bonusInPrimaryCurrency();
         if (bonus != null && bonus.signum() > 0) {
-            addLine("\u542b\u8d60\u9001 " + snap.primarySymbol() + format(bonus), Theme.alpha(Theme.GOOD, 210));
+            String line = "\u542b\u8d60\u9001 " + snap.primarySymbol() + format(bonus);
+            info.add(line);
+            addLine(line, Theme.alpha(Theme.GOOD, 210));
         }
         for (Wallet w : snap.secondaryWallets()) {
-            addLine(w.getSymbol() + format(w.getBalance()) + " " + w.getCurrency()
-                    + (w.isBonus() ? "  (\u8d60\u9001)" : ""),
-                    w.isBonus() ? Theme.alpha(Theme.GOOD, 210) : Theme.TEXT_DIM);
+            String line = w.getSymbol() + format(w.getBalance()) + " " + w.getCurrency()
+                    + (w.isBonus() ? "  (\u8d60\u9001)" : "");
+            info.add(line);
+            addLine(line, w.isBonus() ? Theme.alpha(Theme.GOOD, 210) : Theme.TEXT_DIM);
         }
 
         extraPanel.revalidate();
         extraPanel.repaint();
+
+        StringBuilder caption = new StringBuilder(currencyLabel.getText().trim());
+        for (String line : info) {
+            caption.append("  \u00b7  ").append(line);
+        }
+        regionSubtitle = caption.toString();
+        board.setRegionText(amountLabel.getText(), regionSubtitle, config.getBalanceTextColor());
 
         statusLabel.setForeground(Theme.TEXT_DIM);
         statusLabel.setText("\u66f4\u65b0\u4e8e " + new SimpleDateFormat("HH:mm:ss").format(new Date(snap.getFetchedAtMillis())));
@@ -1045,12 +1114,176 @@ public class BalanceBoard extends JFrame {
 
     // ------------------------------------------------------------ background
 
-    /** Paints the rounded gradient card behind the labels. */
+    /**
+     * Pulls the background image and its framed region out of the settings and applies them.
+     *
+     * <p>Called at startup and after every edit. A background that cannot be read is treated as "no
+     * background" rather than as an error: the widget still has a balance to show, and the built-in
+     * gradient card always works.
+     */
+    private void applyConfiguredBackground() {
+        File file = config.getBackgroundImageFile();
+        BufferedImage image = null;
+        if (file != null) {
+            try {
+                image = ImageIO.read(file);
+            } catch (IOException | RuntimeException e) {
+                image = null;
+            }
+        }
+        backgroundImage = image;
+        balanceRegion = image == null ? null : config.getBalanceRegion();
+        if (image != null && balanceRegion == null) {
+            balanceRegion = AppConfig.defaultBalanceRegion();
+        }
+
+        board.setBackgroundImage(image, balanceRegion);
+        board.setRegionText(amountLabel.getText(), regionSubtitle, config.getBalanceTextColor());
+        // The image fills the whole card, so the label column would only cover it; the figure moves
+        // into the framed box instead.
+        centerPanel.setVisible(image == null);
+        board.revalidate();
+        board.repaint();
+    }
+
+    /** Opens the image picker / region framer, and applies the result when it is confirmed. */
+    private void openBackgroundDialog() {
+        BackgroundRegionDialog dialog = new BackgroundRegionDialog(
+                this, config, amountLabel.getText(), regionSubtitle);
+        dialog.setVisible(true);
+        if (!dialog.isConfirmed()) {
+            return;
+        }
+        applyConfiguredBackground();
+        if (backgroundImage != null) {
+            // Match the card to the image: the user framed the box on the picture, so the card has
+            // to show the picture with the same proportions or the number lands somewhere else.
+            fitWindowToImageAspect();
+            statusLabel.setForeground(Theme.TEXT_DIM);
+            statusLabel.setText("\u5df2\u5e94\u7528\u80cc\u666f\u56fe");
+        }
+    }
+
+    private void clearBackgroundImage() {
+        config.removeBackgroundImage();
+        applyConfiguredBackground();
+        statusLabel.setForeground(Theme.TEXT_DIM);
+        statusLabel.setText("\u5df2\u6062\u590d\u9ed8\u8ba4\u80cc\u666f");
+    }
+
+    /** Resizes the card to the image's aspect ratio, keeping the width and staying on screen. */
+    private void fitWindowToImageAspect() {
+        if (backgroundImage == null || backgroundImage.getWidth() <= 0) {
+            return;
+        }
+        int w = Math.max(minW(), getWidth());
+        int wanted = Math.round(w * (backgroundImage.getHeight() / (float) backgroundImage.getWidth()));
+        Rectangle screen = usableScreenBounds();
+        int ceiling = Math.max(minH(), Math.round(screen.height * 0.85f));
+        setSize(w, Math.max(minH(), Math.min(wanted, ceiling)));
+    }
+
+    private Rectangle usableScreenBounds() {
+        GraphicsConfiguration gc = getGraphicsConfiguration();
+        if (gc != null) {
+            return gc.getBounds();
+        }
+        return new Rectangle(Toolkit.getDefaultToolkit().getScreenSize());
+    }
+
+    /** Paints the rounded card behind the labels. */
     private static class BoardPanel extends JPanel {
         private boolean rounded = true;
+        private BufferedImage backgroundImage;
+        /** Normalised 0..1 box on the image where the balance goes; null when not framed yet. */
+        private Rectangle2D.Float region;
+        private String regionText = "";
+        private String regionSubtitle = "";
+        private Color regionTextColor = Color.WHITE;
 
         void setRounded(boolean rounded) {
             this.rounded = rounded;
+        }
+
+        void setBackgroundImage(BufferedImage image, Rectangle2D.Float region) {
+            this.backgroundImage = image;
+            this.region = region;
+            repaint();
+        }
+
+        void setRegionText(String amount, String subtitle, Color color) {
+            this.regionText = amount == null ? "" : amount;
+            this.regionSubtitle = subtitle == null ? "" : subtitle;
+            this.regionTextColor = color == null ? Color.WHITE : color;
+            repaint();
+        }
+
+        /**
+         * Where the image lands on the card: scaled to <em>cover</em> it and centred.
+         *
+         * <p>Cover rather than stretch, so a user image is never squashed. Applying a background
+         * also sizes the card to the image, which normally makes the two the same thing.
+         */
+        private Rectangle imageBounds() {
+            int w = Math.max(1, getWidth());
+            int h = Math.max(1, getHeight());
+            if (backgroundImage == null || backgroundImage.getWidth() <= 0
+                    || backgroundImage.getHeight() <= 0) {
+                return new Rectangle(0, 0, w, h);
+            }
+            double scale = Math.max(w / (double) backgroundImage.getWidth(),
+                    h / (double) backgroundImage.getHeight());
+            int dw = (int) Math.round(backgroundImage.getWidth() * scale);
+            int dh = (int) Math.round(backgroundImage.getHeight() * scale);
+            return new Rectangle((w - dw) / 2, (h - dh) / 2, dw, dh);
+        }
+
+        /**
+         * The framed box in card coordinates.
+         *
+         * <p>The region is stored relative to the image, so it travels through the same cover
+         * transform the image does. Whatever a very different aspect ratio pushes outside the card
+         * is trimmed here rather than silently clipped at paint time.
+         */
+        Rectangle2D.Float regionOnCard() {
+            if (backgroundImage == null || region == null) {
+                return null;
+            }
+            Rectangle b = imageBounds();
+            float x = (float) (b.x + region.x * b.width);
+            float y = (float) (b.y + region.y * b.height);
+            float x2 = Math.min((float) (x + region.width * b.width), getWidth());
+            float y2 = Math.min((float) (y + region.height * b.height), getHeight());
+            x = Math.max(x, 0f);
+            y = Math.max(y, 0f);
+            if (x2 - x < 1f || y2 - y < 1f) {
+                return null;
+            }
+            return new Rectangle2D.Float(x, y, x2 - x, y2 - y);
+        }
+
+        @Override
+        public void paint(Graphics g) {
+            super.paint(g);
+            // Drawn after the children: a wide frame can reach under the footer, and the number is
+            // the one thing that must never end up hidden.
+            paintRegionText(g);
+        }
+
+        private void paintRegionText(Graphics g) {
+            if (regionText.isEmpty()) {
+                return;
+            }
+            Rectangle2D.Float box = regionOnCard();
+            if (box == null) {
+                return;
+            }
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                BalanceTextRenderer.drawRegion(g2, regionText, regionSubtitle, box, regionTextColor);
+            } finally {
+                g2.dispose();
+            }
         }
 
         @Override
@@ -1066,8 +1299,14 @@ public class BalanceBoard extends JFrame {
                         ? new RoundRectangle2D.Float(0, 0, w - 1, h - 1, arc, arc)
                         : new Rectangle(0, 0, w, h);
                 g2.setClip(clip);
-                g2.setPaint(new GradientPaint(0, 0, Theme.BG_TOP, 0, h, Theme.BG_BOTTOM));
-                g2.fillRect(0, 0, w, h);
+                if (backgroundImage != null) {
+                    Rectangle img = imageBounds();
+                    g2.drawImage(backgroundImage, img.x, img.y, img.width, img.height, null);
+                    paintEdgeScrim(g2, w, h);
+                } else {
+                    g2.setPaint(new GradientPaint(0, 0, Theme.BG_TOP, 0, h, Theme.BG_BOTTOM));
+                    g2.fillRect(0, 0, w, h);
+                }
                 g2.setClip(null);
 
                 if (rounded) {
@@ -1080,6 +1319,21 @@ public class BalanceBoard extends JFrame {
             } finally {
                 g2.dispose();
             }
+        }
+
+        /**
+         * Fades the top and bottom edges of a user image towards black.
+         *
+         * <p>The title bar and the footer sit on top of whatever the user chose, and a bright photo
+         * would otherwise leave the account line unreadable. Gradients rather than flat fills, so
+         * the picture is not boxed in by two obvious bars.
+         */
+        private void paintEdgeScrim(Graphics2D g2, int w, int h) {
+            int band = Math.max(16, Math.min(h / 3, 64));
+            g2.setPaint(new GradientPaint(0, 0, new Color(0, 0, 0, 125), 0, band, new Color(0, 0, 0, 0)));
+            g2.fillRect(0, 0, w, band);
+            g2.setPaint(new GradientPaint(0, h - band, new Color(0, 0, 0, 0), 0, h, new Color(0, 0, 0, 135)));
+            g2.fillRect(0, h - band, w, band);
         }
     }
 }

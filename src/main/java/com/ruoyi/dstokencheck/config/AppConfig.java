@@ -1,12 +1,19 @@
 package com.ruoyi.dstokencheck.config;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
 import java.awt.Rectangle;
+import java.awt.geom.Rectangle2D;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.Locale;
 import java.util.Properties;
 
 /**
@@ -36,6 +43,21 @@ public class AppConfig {
     private int y = -1;
     private int width = 360;
     private int height = 180;
+
+    /** Prefix of the copies kept beside the config file, e.g. {@code background-1730000000000.png}. */
+    private static final String BACKGROUND_PREFIX = "background-";
+
+    /** File name (inside {@link #directory()}) of the custom background, empty when none is set. */
+    private String backgroundImageName = "";
+
+    /** Where the balance figure goes on that image, normalised to the image, or null. */
+    private Rectangle2D.Float balanceRegion;
+
+    /**
+     * Colour of the balance figure in custom-background mode. Matches {@code Theme.TEXT} by default;
+     * the value is repeated here rather than imported so the settings layer stays free of UI types.
+     */
+    private Color balanceTextColor = new Color(0xE9EEF8);
 
     /** The per-user directory holding the config file and the startup log. */
     public static File directory() {
@@ -77,6 +99,10 @@ public class AppConfig {
         y = getInt("window.y", y);
         width = getInt("window.width", width);
         height = getInt("window.height", height);
+
+        backgroundImageName = props.getProperty("backgroundImage", "").trim();
+        balanceRegion = parseRegion(props.getProperty("balanceRegion"));
+        balanceTextColor = parseColor(props.getProperty("balanceTextColor"), balanceTextColor);
     }
 
     public void save() {
@@ -88,6 +114,18 @@ public class AppConfig {
         props.setProperty("window.y", String.valueOf(y));
         props.setProperty("window.width", String.valueOf(width));
         props.setProperty("window.height", String.valueOf(height));
+
+        if (backgroundImageName.isEmpty()) {
+            props.remove("backgroundImage");
+        } else {
+            props.setProperty("backgroundImage", backgroundImageName);
+        }
+        if (balanceRegion == null) {
+            props.remove("balanceRegion");
+        } else {
+            props.setProperty("balanceRegion", formatRegion(balanceRegion));
+        }
+        props.setProperty("balanceTextColor", formatColor(balanceTextColor));
 
         OutputStream out = null;
         try {
@@ -187,6 +225,230 @@ public class AppConfig {
 
     public void setOpacity(float opacity) {
         this.opacity = Math.max(0.3f, Math.min(1f, opacity));
+    }
+
+    // ------------------------------------------------------------- background
+
+    /**
+     * The stored background image, or {@code null} when none is configured.
+     *
+     * <p>The user's own file is never referenced directly: importing copies it into the config
+     * directory, so moving or deleting the original afterwards cannot break the widget.
+     */
+    public File getBackgroundImageFile() {
+        if (backgroundImageName.isEmpty() || !isSafeImageName(backgroundImageName)) {
+            return null;
+        }
+        File f = new File(directory(), backgroundImageName);
+        return f.isFile() ? f : null;
+    }
+
+    public String getBackgroundImageName() {
+        return backgroundImageName;
+    }
+
+    /** True when a usable background image is configured. */
+    public boolean hasBackgroundImage() {
+        return getBackgroundImageFile() != null;
+    }
+
+    /**
+     * Copies {@code source} into the config directory and makes it the configured background.
+     *
+     * <p>The file is decoded first: a rename of a non-image (or a truncated download) would
+     * otherwise only fail later, inside the paint code, where it is much harder to explain.
+     *
+     * <p>Nothing is written to disk here — the caller persists the setting — so a cancelled edit can
+     * be undone with {@link #restoreBackgroundImageName(String)} plus
+     * {@link #pruneBackgroundImages(File)}, which deletes the copy again.
+     *
+     * @return the newly written file, for {@link #pruneBackgroundImages(File)}
+     */
+    public File storeBackgroundImage(File source) throws IOException {
+        if (source == null || !source.isFile()) {
+            throw new IOException("\u6587\u4ef6\u4e0d\u5b58\u5728");
+        }
+        BufferedImage probe;
+        try {
+            probe = ImageIO.read(source);
+        } catch (IOException e) {
+            throw new IOException("\u65e0\u6cd5\u89e3\u6790\u8be5\u56fe\u7247");
+        }
+        if (probe == null) {
+            throw new IOException("\u4e0d\u662f\u53ef\u8bc6\u522b\u7684\u56fe\u7247\u683c\u5f0f");
+        }
+
+        File dir = directory();
+        if (!dir.exists() && !dir.mkdirs()) {
+            throw new IOException("\u65e0\u6cd5\u521b\u5efa\u914d\u7f6e\u76ee\u5f55");
+        }
+        // A fresh name per import keeps the import non-destructive: the previous copy stays intact
+        // until the edit is confirmed, so cancelling can never lose the old background.
+        File target = new File(dir, BACKGROUND_PREFIX + System.currentTimeMillis()
+                + "." + extensionOf(source.getName()));
+        try {
+            Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            // Do not leave a half-written copy behind for the next launch to trip over.
+            deleteIfStoredImage(target);
+            throw new IOException("\u590d\u5236\u56fe\u7247\u5931\u8d25\uff1a" + e.getMessage());
+        }
+        backgroundImageName = target.getName();
+        return target;
+    }
+
+    /** Removes every stored copy except {@code keep}; called once an import is confirmed. */
+    public void pruneBackgroundImages(File keep) {
+        File[] files = directory().listFiles();
+        if (files == null) {
+            return;
+        }
+        String keepName = keep == null ? null : keep.getName();
+        for (File f : files) {
+            if (f.getName().startsWith(BACKGROUND_PREFIX) && !f.getName().equals(keepName)) {
+                deleteIfStoredImage(f);
+            }
+        }
+    }
+
+    /** Drops the custom background entirely: the setting and every stored copy of the image. */
+    public void removeBackgroundImage() {
+        backgroundImageName = "";
+        balanceRegion = null;
+        pruneBackgroundImages(null);
+        save();
+    }
+
+    /** Restores the in-memory setting after a cancelled edit; does not touch the file system. */
+    public void restoreBackgroundImageName(String name) {
+        this.backgroundImageName = name == null ? "" : name;
+    }
+
+    /**
+     * Where the balance figure is drawn on the image, normalised to 0..1, or {@code null} when the
+     * user has not framed an area yet.
+     */
+    public Rectangle2D.Float getBalanceRegion() {
+        if (balanceRegion == null) {
+            return null;
+        }
+        return new Rectangle2D.Float(balanceRegion.x, balanceRegion.y,
+                balanceRegion.width, balanceRegion.height);
+    }
+
+    /** Stores a normalised region, clamped so it always stays inside the image. */
+    public void setBalanceRegion(Rectangle2D.Float region) {
+        if (region == null) {
+            balanceRegion = null;
+            return;
+        }
+        float w = clamp(region.width, 0.01f, 1f);
+        float h = clamp(region.height, 0.01f, 1f);
+        float x = clamp(region.x, 0f, 1f - w);
+        float y = clamp(region.y, 0f, 1f - h);
+        balanceRegion = new Rectangle2D.Float(x, y, w, h);
+    }
+
+    /** A sensible starting box: a wide band across the middle of the image. */
+    public static Rectangle2D.Float defaultBalanceRegion() {
+        return new Rectangle2D.Float(0.08f, 0.36f, 0.84f, 0.28f);
+    }
+
+    public Color getBalanceTextColor() {
+        return balanceTextColor;
+    }
+
+    public void setBalanceTextColor(Color color) {
+        if (color != null) {
+            // Opaque only: the renderer draws its own shadow, and a translucent colour on an
+            // arbitrary photo is the fastest way to an unreadable number.
+            balanceTextColor = new Color(color.getRed(), color.getGreen(), color.getBlue());
+        }
+    }
+
+    // ---------------------------------------------------------- value helpers
+
+    /** Extensions we are willing to store; anything else is kept as PNG. */
+    private static String extensionOf(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        if (dot >= 0 && dot < fileName.length() - 1) {
+            String ext = fileName.substring(dot + 1).toLowerCase(Locale.ROOT);
+            for (String known : new String[]{"png", "jpg", "jpeg", "gif", "bmp"}) {
+                if (known.equals(ext)) {
+                    return ext;
+                }
+            }
+        }
+        return "png";
+    }
+
+    /** A stored name must be a plain file name inside our own directory. */
+    private static boolean isSafeImageName(String name) {
+        return !name.isEmpty()
+                && name.indexOf('/') < 0
+                && name.indexOf('\\') < 0
+                && !name.contains("..");
+    }
+
+    /** Deletes a file only when it really is one of our stored copies. */
+    private static void deleteIfStoredImage(File file) {
+        if (file == null || !file.getName().startsWith(BACKGROUND_PREFIX)) {
+            return;
+        }
+        if (!directory().equals(file.getParentFile())) {
+            return;
+        }
+        //noinspection ResultOfMethodCallIgnored
+        file.delete();
+    }
+
+    private static String formatRegion(Rectangle2D.Float r) {
+        return round4(r.x) + "," + round4(r.y) + "," + round4(r.width) + "," + round4(r.height);
+    }
+
+    private static String round4(float v) {
+        return String.format(Locale.ROOT, "%.4f", v);
+    }
+
+    private static Rectangle2D.Float parseRegion(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String[] parts = raw.trim().split(",");
+        if (parts.length != 4) {
+            return null;
+        }
+        try {
+            float x = Float.parseFloat(parts[0].trim());
+            float y = Float.parseFloat(parts[1].trim());
+            float w = Float.parseFloat(parts[2].trim());
+            float h = Float.parseFloat(parts[3].trim());
+            if (w <= 0.01f || h <= 0.01f || x < 0f || y < 0f || x + w > 1.001f || y + h > 1.001f) {
+                return null;
+            }
+            return new Rectangle2D.Float(x, y, w, h);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static String formatColor(Color c) {
+        return String.format(Locale.ROOT, "%06x", c.getRGB() & 0xFFFFFF);
+    }
+
+    private static Color parseColor(String raw, Color fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            return new Color(Integer.parseInt(raw.trim(), 16) & 0xFFFFFF);
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private static float clamp(float v, float lo, float hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     public Rectangle getBounds() {

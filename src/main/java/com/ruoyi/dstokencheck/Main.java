@@ -251,7 +251,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[12];
+        boolean[] pass = new boolean[13];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -353,6 +353,8 @@ public final class Main {
             pass[10] = checkBalanceSitsInsideFramedRegion();
 
             pass[11] = checkBackgroundRegionEditor();
+
+            pass[12] = checkCropMatchesWindow();
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -592,16 +594,21 @@ public final class Main {
             writeTestImage(source, 300, 150, new java.awt.Color(0x40, 0x40, 0x40));
             java.io.File stored = probe.storeBackgroundImage(source);
             probe.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.20f, 0.30f, 0.60f, 0.40f));
+            probe.setImageCrop(new java.awt.geom.Rectangle2D.Float(0.10f, 0.20f, 0.50f, 0.60f));
             probe.setBalanceTextColor(new java.awt.Color(0xFF, 0xCC, 0x00));
             probe.save();
 
             AppConfig reloaded = new AppConfig();
             java.awt.geom.Rectangle2D.Float r = reloaded.getBalanceRegion();
+            java.awt.geom.Rectangle2D.Float c = reloaded.getImageCrop();
             boolean roundTrip = reloaded.hasBackgroundImage()
                     && stored != null && stored.isFile()
                     && r != null
                     && Math.abs(r.x - 0.20f) < 0.002f && Math.abs(r.y - 0.30f) < 0.002f
                     && Math.abs(r.width - 0.60f) < 0.002f && Math.abs(r.height - 0.40f) < 0.002f
+                    && c != null
+                    && Math.abs(c.x - 0.10f) < 0.002f && Math.abs(c.y - 0.20f) < 0.002f
+                    && Math.abs(c.width - 0.50f) < 0.002f && Math.abs(c.height - 0.60f) < 0.002f
                     && reloaded.getBalanceTextColor().equals(new java.awt.Color(0xFF, 0xCC, 0x00));
 
             // A region that would hang off the edge has to be pulled back inside.
@@ -611,15 +618,22 @@ public final class Main {
                     && clamped.x + clamped.width <= 1.001f
                     && clamped.y + clamped.height <= 1.001f;
 
+            // A "crop" of the whole picture is the same thing as no crop, and is stored as such.
+            reloaded.setImageCrop(new java.awt.geom.Rectangle2D.Float(0f, 0f, 1f, 1f));
+            boolean fullFrameDropped = !reloaded.hasImageCrop()
+                    && reloaded.getEffectiveCrop().width == 1f;
+
             java.io.File copy = reloaded.getBackgroundImageFile();
             reloaded.removeBackgroundImage();
             boolean removed = !reloaded.hasBackgroundImage()
+                    && !reloaded.hasImageCrop()
                     && (copy == null || !copy.exists());
 
-            boolean ok = roundTrip && inside && removed;
+            boolean ok = roundTrip && inside && fullFrameDropped && removed;
             System.out.println((ok ? "PASS" : "FAIL") + "  \u80cc\u666f\u56fe\u8bbe\u7f6e"
                     + " (\u4fdd\u5b58/\u8bfb\u56de=" + roundTrip
                     + ", \u8d8a\u754c\u533a\u57df\u88ab\u6536\u56de=" + inside
+                    + ", \u5168\u5e45\u88c1\u526a\u4e0d\u5199\u76d8=" + fullFrameDropped
                     + ", \u5220\u9664\u540e\u65e0\u6b8b\u7559=" + removed + ")");
             return ok;
         } catch (Exception e) {
@@ -899,6 +913,146 @@ public final class Main {
             }
         }
         return null;
+    }
+
+    /**
+     * The point of cropping: the window's edges are the crop's edges.
+     *
+     * <p>Checked on a picture of four fat vertical stripes, cropping to the middle two. The left
+     * edge of the card must then be green and the right edge blue, with the outer red and yellow
+     * stripes nowhere to be seen — that is exactly "the window shows this crop and nothing else".
+     *
+     * <p>Also drags a corner afterwards: with the picture in place the card must keep the crop's
+     * proportions, or one side of the resize would pull the edges off the crop again.
+     */
+    private static boolean checkCropMatchesWindow() {
+        final int cardW = 400;
+        final int cardH = 200;
+        AppConfig config = new AppConfig();
+        config.removeBackgroundImage();
+        java.io.File source = new java.io.File(AppConfig.directory(), "selftest-crop.png");
+        final BalanceBoard[] ref = new BalanceBoard[1];
+        try {
+            java.awt.image.BufferedImage stripes = new java.awt.image.BufferedImage(
+                    400, 100, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.awt.Graphics2D sg = stripes.createGraphics();
+            try {
+                java.awt.Color[] colors = {
+                    new java.awt.Color(0xC0, 0x20, 0x20), new java.awt.Color(0x20, 0xC0, 0x40),
+                    new java.awt.Color(0x20, 0x60, 0xE0), new java.awt.Color(0xE0, 0xC0, 0x20),
+                };
+                for (int i = 0; i < colors.length; i++) {
+                    sg.setColor(colors[i]);
+                    sg.fillRect(i * 100, 0, 100, 100);
+                }
+            } finally {
+                sg.dispose();
+            }
+            javax.imageio.ImageIO.write(stripes, "png", source);
+
+            config.storeBackgroundImage(source);
+            // The middle half of the picture: green then blue. 2:1.
+            config.setImageCrop(new java.awt.geom.Rectangle2D.Float(0.25f, 0f, 0.5f, 1f));
+            config.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.30f, 0.40f, 0.40f, 0.20f));
+            config.setBalanceTextColor(java.awt.Color.WHITE);
+            // A deliberately wrong shape, to prove the card corrects itself to the crop.
+            config.setBounds(new Rectangle(60, 60, cardW, 137));
+            config.save();
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    DeepSeekClient demoClient = new DeepSeekClient();
+                    demoClient.setApiKey("sk-demo-000000000000000000000000");
+                    BalanceBoard b = new BalanceBoard(config, demoClient, null);
+                    b.setLocation(-4000, -4000);
+                    b.setVisible(true);
+                    b.start();
+                    ref[0] = b;
+                }
+            });
+            Thread.sleep(700);
+
+            Rectangle bounds = ref[0].getBounds();
+            boolean aspectFitted = Math.abs(bounds.width / (double) bounds.height - 2.0) < 0.06;
+
+            final java.awt.image.BufferedImage shot = new java.awt.image.BufferedImage(
+                    bounds.width, bounds.height, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    java.awt.Graphics2D g = shot.createGraphics();
+                    try {
+                        ref[0].paint(g);
+                    } finally {
+                        g.dispose();
+                    }
+                }
+            });
+
+            int midY = bounds.height / 2;
+            int left = shot.getRGB(10, midY);
+            int right = shot.getRGB(bounds.width - 20, midY);
+            boolean leftIsGreen = green(left) > red(left) + 30 && green(left) > blue(left) + 30;
+            boolean rightIsBlue = blue(right) > red(right) + 60 && blue(right) > green(right) + 60;
+
+            // Nothing of the cropped-away stripes may be visible anywhere on the card.
+            boolean noRedOrYellow = true;
+            for (int y = 0; y < bounds.height && noRedOrYellow; y += 7) {
+                for (int x = 0; x < bounds.width; x += 7) {
+                    int rgb = shot.getRGB(x, y);
+                    if (red(rgb) > green(rgb) + 60 && red(rgb) > blue(rgb) + 60) {
+                        noRedOrYellow = false;
+                        break;
+                    }
+                }
+            }
+
+            // Resizing must keep the crop's proportions.
+            drag(ref[0], new Point(bounds.x + bounds.width - 2, bounds.y + bounds.height - 2), 90, 10);
+            Thread.sleep(400);
+            Rectangle resized = ref[0].getBounds();
+            boolean aspectKept = resized.width > bounds.width
+                    && Math.abs(resized.width / (double) resized.height - 2.0) < 0.08;
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].dispose();
+                }
+            });
+
+            boolean ok = aspectFitted && leftIsGreen && rightIsBlue && noRedOrYellow && aspectKept;
+            System.out.println((ok ? "PASS" : "FAIL")
+                    + "  \u7a97\u53e3\u8fb9\u7f18\u4e0e\u88c1\u526a\u4e00\u81f4"
+                    + " (\u7a97\u53e3=" + bounds.width + "x" + bounds.height
+                    + " \u6bd4\u4f8b\u5df2\u8ddf\u968f\u88c1\u526a=" + aspectFitted
+                    + ", \u5de6\u8fb9\u7f18\u662f\u88c1\u526a\u5de6\u8fb9=" + leftIsGreen
+                    + ", \u53f3\u8fb9\u7f18\u662f\u88c1\u526a\u53f3\u8fb9=" + rightIsBlue
+                    + ", \u88ab\u88c1\u6389\u7684\u989c\u8272\u672a\u51fa\u73b0=" + noRedOrYellow
+                    + ", \u7f29\u653e\u540e\u4fdd\u6301\u6bd4\u4f8b=" + aspectKept
+                    + " -> " + resized.width + "x" + resized.height + ")");
+            return ok;
+        } catch (Exception e) {
+            System.out.println("FAIL  \u7a97\u53e3\u8fb9\u7f18\u4e0e\u88c1\u526a\u4e00\u81f4: " + e);
+            return false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            source.delete();
+            config.removeBackgroundImage();
+        }
+    }
+
+    private static int red(int rgb) {
+        return (rgb >> 16) & 0xFF;
+    }
+
+    private static int green(int rgb) {
+        return (rgb >> 8) & 0xFF;
+    }
+
+    private static int blue(int rgb) {
+        return rgb & 0xFF;
     }
 
     /** Writes a flat-colour PNG, used as a stand-in for a user's background image. */

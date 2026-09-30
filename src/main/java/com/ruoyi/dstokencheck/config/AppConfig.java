@@ -54,6 +54,15 @@ public class AppConfig {
     private Rectangle2D.Float balanceRegion;
 
     /**
+     * The part of the image the widget shows, normalised to the image, or null for all of it.
+     *
+     * <p>Cropping is what lets the card's own edges land on the picture's edges: the visible area
+     * becomes the whole window, so nothing outside the crop can leak in and nothing inside it is
+     * lost to a bad aspect ratio.
+     */
+    private Rectangle2D.Float imageCrop;
+
+    /**
      * Colour of the balance figure in custom-background mode. Matches {@code Theme.TEXT} by default;
      * the value is repeated here rather than imported so the settings layer stays free of UI types.
      */
@@ -102,6 +111,7 @@ public class AppConfig {
 
         backgroundImageName = props.getProperty("backgroundImage", "").trim();
         balanceRegion = parseRegion(props.getProperty("balanceRegion"));
+        imageCrop = parseRegion(props.getProperty("imageCrop"));
         balanceTextColor = parseColor(props.getProperty("balanceTextColor"), balanceTextColor);
     }
 
@@ -124,6 +134,11 @@ public class AppConfig {
             props.remove("balanceRegion");
         } else {
             props.setProperty("balanceRegion", formatRegion(balanceRegion));
+        }
+        if (imageCrop == null) {
+            props.remove("imageCrop");
+        } else {
+            props.setProperty("imageCrop", formatRegion(imageCrop));
         }
         props.setProperty("balanceTextColor", formatColor(balanceTextColor));
 
@@ -315,6 +330,7 @@ public class AppConfig {
     public void removeBackgroundImage() {
         backgroundImageName = "";
         balanceRegion = null;
+        imageCrop = null;
         pruneBackgroundImages(null);
         save();
     }
@@ -352,6 +368,52 @@ public class AppConfig {
     /** A sensible starting box: a wide band across the middle of the image. */
     public static Rectangle2D.Float defaultBalanceRegion() {
         return new Rectangle2D.Float(0.08f, 0.36f, 0.84f, 0.28f);
+    }
+
+    /**
+     * The part of the image the widget shows, or null when the whole picture is used.
+     *
+     * <p>Stored only when it really is a crop: a full-frame "crop" is the same thing as no crop,
+     * and leaving it out keeps a settings file that a human can still read.
+     */
+    public Rectangle2D.Float getImageCrop() {
+        if (imageCrop == null) {
+            return null;
+        }
+        return new Rectangle2D.Float(imageCrop.x, imageCrop.y, imageCrop.width, imageCrop.height);
+    }
+
+    /** The crop the widget should draw, never null: a full-frame crop when nothing is set. */
+    public Rectangle2D.Float getEffectiveCrop() {
+        Rectangle2D.Float crop = getImageCrop();
+        return crop == null ? new Rectangle2D.Float(0f, 0f, 1f, 1f) : crop;
+    }
+
+    /** True when part of the picture has been cropped away. */
+    public boolean hasImageCrop() {
+        return imageCrop != null;
+    }
+
+    /** Stores a normalised crop; a full-frame one is dropped, and small ones are clamped away. */
+    public void setImageCrop(Rectangle2D.Float crop) {
+        if (crop == null || isFullFrame(crop)) {
+            imageCrop = null;
+            return;
+        }
+        float w = clamp(crop.width, MIN_CROP, 1f);
+        float h = clamp(crop.height, MIN_CROP, 1f);
+        float x = clamp(crop.x, 0f, 1f - w);
+        float y = clamp(crop.y, 0f, 1f - h);
+        imageCrop = new Rectangle2D.Float(x, y, w, h);
+    }
+
+    /** Smallest crop we accept, as a fraction of the image; below this the card is a sliver. */
+    public static final float MIN_CROP = 0.05f;
+
+    private static boolean isFullFrame(Rectangle2D.Float crop) {
+        float eps = 0.0005f;
+        return Math.abs(crop.x) < eps && Math.abs(crop.y) < eps
+                && Math.abs(crop.width - 1f) < eps && Math.abs(crop.height - 1f) < eps;
     }
 
     public Color getBalanceTextColor() {

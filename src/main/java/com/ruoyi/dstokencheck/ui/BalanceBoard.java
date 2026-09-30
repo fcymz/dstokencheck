@@ -135,6 +135,8 @@ public class BalanceBoard extends JFrame {
 
     /** The user's background image, or null when the built-in gradient card is used. */
     private BufferedImage backgroundImage;
+    /** The visible part of that image (normalised), or null for all of it. */
+    private Rectangle2D.Float imageCrop;
     /** Normalised box on that image where the balance is drawn. */
     private Rectangle2D.Float balanceRegion;
     /** Compact "CNY ≈ 12.4M tokens · 含赠送 …" line shown inside the framed box. */
@@ -193,6 +195,13 @@ public class BalanceBoard extends JFrame {
             setLocation(saved.x, saved.y);
         } else {
             setLocationRelativeTo(null);
+        }
+
+        // A background makes the card's edges the crop's edges, so the proportions are not the
+        // user's to choose freely: correct them here too, in case the settings were edited by hand
+        // or saved by an older build that allowed any shape.
+        if (backgroundImage != null) {
+            fitWindowToImageAspect();
         }
 
         addWindowListener(new WindowAdapter() {
@@ -423,17 +432,17 @@ public class BalanceBoard extends JFrame {
         menu.add(pinItem);
 
         final JMenuItem sizeItem = new JMenuItem("\u6062\u590d\u9ed8\u8ba4\u5927\u5c0f");
-        sizeItem.addActionListener(e -> setSize(Math.max(minW(), 360), Math.max(minH(), 180)));
+        sizeItem.addActionListener(e -> applySize(360, 180));
         menu.add(sizeItem);
 
         JMenuItem smallItem = new JMenuItem("\u5c0f\u7a97\u53e3");
-        smallItem.addActionListener(e -> setSize(minW(), minH()));
+        smallItem.addActionListener(e -> applySize(minW(), minH()));
         menu.add(smallItem);
 
         JMenuItem bigItem = new JMenuItem("\u5927\u7a97\u53e3 (420\u00d7220 \u00d7 \u5b57\u4f53)");
-        bigItem.addActionListener(e -> setSize(
-                Math.max(minW(), Math.round(420 * config.getFontScale())),
-                Math.max(minH(), Math.round(220 * config.getFontScale()))));
+        bigItem.addActionListener(e -> applySize(
+                Math.round(420 * config.getFontScale()),
+                Math.round(220 * config.getFontScale())));
         menu.add(bigItem);
 
         menu.add(new JSeparator());
@@ -1026,7 +1035,92 @@ public class BalanceBoard extends JFrame {
         if ((resizeEdge & SOUTH) != 0) {
             b.height = Math.max(limitH, pressBounds.height + dy);
         }
+        if (backgroundImage != null) {
+            b = lockAspect(b);
+        }
         setBounds(b);
+    }
+
+    /**
+     * Forces a resize to keep the visible picture's proportions.
+     *
+     * <p>Without this the window's edges would stop matching the crop the moment one side is
+     * dragged on its own: the picture would be cut off or squeezed, which is exactly what cropping
+     * exists to settle. Whatever edge or corner the user grabbed stays under the pointer.
+     */
+    private Rectangle lockAspect(Rectangle wanted) {
+        double aspect = backgroundAspect();
+        int w = Math.max(1, wanted.width);
+        int h = Math.max(1, wanted.height);
+        boolean horizontal = (resizeEdge & (WEST | EAST)) != 0;
+        boolean vertical = (resizeEdge & (NORTH | SOUTH)) != 0;
+
+        if (horizontal && !vertical) {
+            h = (int) Math.round(w / aspect);
+        } else if (vertical && !horizontal) {
+            w = (int) Math.round(h * aspect);
+        } else {
+            // A corner: follow whichever side the pointer pushed further, relatively.
+            double dw = Math.abs(w - pressBounds.width) / (double) Math.max(1, pressBounds.width);
+            double dh = Math.abs(h - pressBounds.height) / (double) Math.max(1, pressBounds.height);
+            if (dw >= dh) {
+                h = (int) Math.round(w / aspect);
+            } else {
+                w = (int) Math.round(h * aspect);
+            }
+        }
+        if (w < minW() || h < minH()) {
+            w = Math.max(minW(), (int) Math.round(minH() * aspect));
+            h = (int) Math.round(w / aspect);
+            if (h < minH()) {
+                h = minH();
+                w = (int) Math.round(h * aspect);
+            }
+        }
+
+        int x = wanted.x;
+        int y = wanted.y;
+        if ((resizeEdge & WEST) != 0) {
+            x = pressBounds.x + pressBounds.width - w;
+        } else if ((resizeEdge & EAST) == 0) {
+            x = pressBounds.x + (pressBounds.width - w) / 2;
+        }
+        if ((resizeEdge & NORTH) != 0) {
+            y = pressBounds.y + pressBounds.height - h;
+        } else if ((resizeEdge & SOUTH) == 0) {
+            y = pressBounds.y + (pressBounds.height - h) / 2;
+        }
+        return new Rectangle(x, y, w, h);
+    }
+
+    /**
+     * Applies a requested size, keeping the picture's proportions when a background is in use —
+     * otherwise the size presets would break the alignment that cropping exists to guarantee.
+     */
+    private void applySize(int wantedW, int wantedH) {
+        int w = Math.max(1, wantedW);
+        int h = Math.max(1, wantedH);
+        if (backgroundImage != null) {
+            double aspect = backgroundAspect();
+            // Honour the larger of the two requests, so the card is never smaller than asked for.
+            if (w / aspect >= h) {
+                h = (int) Math.round(w / aspect);
+            } else {
+                w = (int) Math.round(h * aspect);
+            }
+            if (w < minW()) {
+                w = minW();
+                h = (int) Math.round(w / aspect);
+            }
+            if (h < minH()) {
+                h = minH();
+                w = (int) Math.round(h * aspect);
+            }
+        } else {
+            w = Math.max(minW(), w);
+            h = Math.max(minH(), h);
+        }
+        setSize(w, h);
     }
 
     private void endGesture() {
@@ -1130,12 +1224,13 @@ public class BalanceBoard extends JFrame {
             }
         }
         backgroundImage = image;
+        imageCrop = image == null ? null : config.getImageCrop();
         balanceRegion = image == null ? null : config.getBalanceRegion();
         if (image != null && balanceRegion == null) {
             balanceRegion = AppConfig.defaultBalanceRegion();
         }
 
-        board.setBackgroundImage(image, balanceRegion);
+        board.setBackgroundImage(image, imageCrop, balanceRegion);
         board.setRegionText(amountLabel.getText(), regionSubtitle, config.getBalanceTextColor());
         // The image fills the whole card, so the label column would only cover it; the figure moves
         // into the framed box instead.
@@ -1171,16 +1266,28 @@ public class BalanceBoard extends JFrame {
         statusLabel.setText("\u5df2\u6062\u590d\u9ed8\u8ba4\u80cc\u666f");
     }
 
-    /** Resizes the card to the image's aspect ratio, keeping the width and staying on screen. */
+    /**
+     * Resizes the card to the visible picture's aspect ratio, keeping the width and staying on
+     * screen. This is what puts the window's edges on the crop's edges.
+     */
     private void fitWindowToImageAspect() {
         if (backgroundImage == null || backgroundImage.getWidth() <= 0) {
             return;
         }
-        int w = Math.max(minW(), getWidth());
-        int wanted = Math.round(w * (backgroundImage.getHeight() / (float) backgroundImage.getWidth()));
         Rectangle screen = usableScreenBounds();
         int ceiling = Math.max(minH(), Math.round(screen.height * 0.85f));
-        setSize(w, Math.max(minH(), Math.min(wanted, ceiling)));
+        int w = Math.max(minW(), getWidth());
+        int h = Math.max(minH(), Math.min((int) Math.round(w / backgroundAspect()), ceiling));
+        setSize(w, h);
+    }
+
+    /** Width-to-height ratio of the part of the picture the window shows. */
+    private double backgroundAspect() {
+        if (backgroundImage == null || backgroundImage.getHeight() <= 0) {
+            return 1.5;
+        }
+        return BackgroundLayout.cropAspect(imageCrop,
+                backgroundImage.getWidth(), backgroundImage.getHeight());
     }
 
     private Rectangle usableScreenBounds() {
@@ -1195,6 +1302,8 @@ public class BalanceBoard extends JFrame {
     private static class BoardPanel extends JPanel {
         private boolean rounded = true;
         private BufferedImage backgroundImage;
+        /** Visible part of that image (normalised), or null for all of it. */
+        private Rectangle2D.Float imageCrop;
         /** Normalised 0..1 box on the image where the balance goes; null when not framed yet. */
         private Rectangle2D.Float region;
         private String regionText = "";
@@ -1205,8 +1314,9 @@ public class BalanceBoard extends JFrame {
             this.rounded = rounded;
         }
 
-        void setBackgroundImage(BufferedImage image, Rectangle2D.Float region) {
+        void setBackgroundImage(BufferedImage image, Rectangle2D.Float crop, Rectangle2D.Float region) {
             this.backgroundImage = image;
+            this.imageCrop = crop;
             this.region = region;
             repaint();
         }
@@ -1219,10 +1329,11 @@ public class BalanceBoard extends JFrame {
         }
 
         /**
-         * Where the image lands on the card: scaled to <em>cover</em> it and centred.
+         * Where the image lands on the card.
          *
-         * <p>Cover rather than stretch, so a user image is never squashed. Applying a background
-         * also sizes the card to the image, which normally makes the two the same thing.
+         * <p>The configured crop is scaled to cover the card, so the card's edges are the crop's
+         * edges. Cover rather than stretch: if the card has since been left at another aspect ratio
+         * the picture is trimmed evenly instead of being squashed.
          */
         private Rectangle imageBounds() {
             int w = Math.max(1, getWidth());
@@ -1230,7 +1341,8 @@ public class BalanceBoard extends JFrame {
             if (backgroundImage == null) {
                 return new Rectangle(0, 0, w, h);
             }
-            return BackgroundLayout.coverRect(backgroundImage.getWidth(), backgroundImage.getHeight(), w, h);
+            return BackgroundLayout.imageRect(imageCrop,
+                    backgroundImage.getWidth(), backgroundImage.getHeight(), w, h);
         }
 
         /**

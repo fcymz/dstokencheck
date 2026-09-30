@@ -676,7 +676,7 @@ public class BackgroundRegionDialog extends JDialog {
      * every abandoned attempt would leave another copy of the image behind.
      */
     private void rollbackImport() {
-        config.restoreBackgroundImageName(originalImageName);
+        config.setBackgroundImageName(originalImageName);
         config.pruneBackgroundImages(config.getBackgroundImageFile());
     }
 

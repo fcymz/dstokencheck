@@ -8,13 +8,14 @@ import java.awt.Rectangle;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -304,9 +305,36 @@ public class AppConfig {
         if (source == null || !source.isFile()) {
             throw new IOException("\u6587\u4ef6\u4e0d\u5b58\u5728");
         }
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(source.toPath());
+        } catch (IOException e) {
+            throw new IOException("\u65e0\u6cd5\u8bfb\u53d6\u8be5\u6587\u4ef6");
+        }
+        return storeBackgroundBytes(bytes, extensionOf(source.getName()));
+    }
+
+    /**
+     * Takes a picture from somewhere other than the file system — a preset bundled in the jar — and
+     * stores it exactly like an imported one.
+     */
+    public File importBackgroundImage(InputStream source, String extension) throws IOException {
+        if (source == null) {
+            throw new IOException("\u9884\u8bbe\u56fe\u7247\u7f3a\u5931");
+        }
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int read;
+        while ((read = source.read(chunk)) > 0) {
+            buffer.write(chunk, 0, read);
+        }
+        return storeBackgroundBytes(buffer.toByteArray(), extensionOf("background." + extension));
+    }
+
+    private File storeBackgroundBytes(byte[] bytes, String extension) throws IOException {
         BufferedImage probe;
         try {
-            probe = ImageIO.read(source);
+            probe = ImageIO.read(new ByteArrayInputStream(bytes));
         } catch (IOException e) {
             throw new IOException("\u65e0\u6cd5\u89e3\u6790\u8be5\u56fe\u7247");
         }
@@ -320,10 +348,9 @@ public class AppConfig {
         }
         // A fresh name per import keeps the import non-destructive: the previous copy stays intact
         // until the edit is confirmed, so cancelling can never lose the old background.
-        File target = new File(dir, BACKGROUND_PREFIX + System.currentTimeMillis()
-                + "." + extensionOf(source.getName()));
+        File target = new File(dir, BACKGROUND_PREFIX + System.currentTimeMillis() + "." + extension);
         try {
-            Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            Files.write(target.toPath(), bytes);
         } catch (IOException e) {
             // Do not leave a half-written copy behind for the next launch to trip over.
             deleteIfStoredImage(target);
@@ -358,8 +385,67 @@ public class AppConfig {
     }
 
     /** Restores the in-memory setting after a cancelled edit; does not touch the file system. */
-    public void restoreBackgroundImageName(String name) {
+    public void setBackgroundImageName(String name) {
         this.backgroundImageName = name == null ? "" : name;
+    }
+
+    /**
+     * Overwrites the look settings with a preset's values.
+     *
+     * <p>Only the keys a preset actually carries are touched, so a preset that says nothing about,
+     * say, opacity leaves the user's own choice alone. Credentials are never read from a preset —
+     * they are not in {@code preset.properties} to begin with, and this method does not look for
+     * them. The window's position is kept for the same reason: a preset names a size, not a spot on
+     * somebody else's screen.
+     */
+    public void applyPresetSettings(Properties preset) {
+        Rectangle2D.Float crop = parseRegion(preset.getProperty("imageCrop"));
+        CropShape shape = CropShape.parse(preset.getProperty("imageCropShape"));
+        if (shape != null) {
+            setCropShape(shape);
+        } else if (crop != null) {
+            setImageCrop(crop);
+        }
+        Rectangle2D.Float region = parseRegion(preset.getProperty("balanceRegion"));
+        if (region != null) {
+            setBalanceRegion(region);
+        }
+        Color color = parseColor(preset.getProperty("balanceTextColor"), null);
+        if (color != null) {
+            setBalanceTextColor(color);
+        }
+        setFontScale(parseFloat(preset.getProperty("fontScale"), fontScale));
+        setOpacity(parseFloat(preset.getProperty("opacity"), opacity));
+        String top = preset.getProperty("alwaysOnTop");
+        if (top != null) {
+            setAlwaysOnTop(Boolean.parseBoolean(top.trim()));
+        }
+        setRefreshSeconds(parseInt(preset.getProperty("refreshSeconds"), refreshSeconds));
+        setBounds(new Rectangle(x, y,
+                parseInt(preset.getProperty("window.width"), width),
+                parseInt(preset.getProperty("window.height"), height)));
+    }
+
+    private static float parseFloat(String raw, float fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            return Float.parseFloat(raw.trim());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private static int parseInt(String raw, int fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     /**

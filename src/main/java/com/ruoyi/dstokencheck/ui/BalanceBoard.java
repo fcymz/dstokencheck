@@ -2,6 +2,7 @@ package com.ruoyi.dstokencheck.ui;
 
 import com.ruoyi.dstokencheck.autostart.AutoStart;
 import com.ruoyi.dstokencheck.config.AppConfig;
+import com.ruoyi.dstokencheck.config.Preset;
 import com.sun.jna.Native;
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
@@ -472,6 +473,21 @@ public class BalanceBoard extends JFrame {
                 Math.round(420 * config.getFontScale()),
                 Math.round(220 * config.getFontScale())));
         menu.add(bigItem);
+
+        menu.add(new JSeparator());
+
+        JMenu presetMenu = new JMenu("\u9884\u8bbe\u914d\u7f6e");
+        List<Preset> presets = Preset.bundled();
+        for (final Preset preset : presets) {
+            JMenuItem item = new JMenuItem(preset.getName());
+            item.setToolTipText(preset.getDescription().isEmpty()
+                    ? "\u4e00\u952e\u5957\u7528\u8fd9\u5957\u5916\u89c2"
+                    : preset.getDescription());
+            item.addActionListener(e -> applyPreset(preset));
+            presetMenu.add(item);
+        }
+        presetMenu.setEnabled(!presets.isEmpty());
+        menu.add(presetMenu);
 
         menu.add(new JSeparator());
 
@@ -1378,6 +1394,35 @@ public class BalanceBoard extends JFrame {
         applyConfiguredBackground();
         statusLabel.setForeground(Theme.TEXT_DIM);
         statusLabel.setText("\u5df2\u6062\u590d\u9ed8\u8ba4\u80cc\u666f");
+    }
+
+    /**
+     * Switches the widget to a bundled look in one go: picture, crop, framed box, colour, font
+     * scale, card size and the rest of it. Used by the 预设配置 menu and by {@code --preset}.
+     */
+    public void applyPreset(Preset preset) {
+        if (preset == null) {
+            return;
+        }
+        try {
+            preset.applyTo(config);
+        } catch (Exception e) {
+            String message = e.getMessage() == null ? e.toString() : e.getMessage();
+            statusLabel.setForeground(Theme.DANGER);
+            statusLabel.setText("\u9884\u8bbe\u5e94\u7528\u5931\u8d25\uff1a" + message);
+            // The footer is hidden behind a picture, so the failure has to appear on the picture.
+            board.setErrorText("\u9884\u8bbe\u5e94\u7528\u5931\u8d25\uff1a" + message);
+            return;
+        }
+        applyConfiguredBackground();
+        Rectangle saved = config.getBounds();
+        applySize(saved.width, saved.height);
+        applyAlwaysOnTop(config.isAlwaysOnTop());
+        applyFonts();
+        refreshTimer.setDelay(config.getRefreshSeconds() * 1000);
+        refreshTimer.setInitialDelay(config.getRefreshSeconds() * 1000);
+        statusLabel.setForeground(Theme.TEXT_DIM);
+        statusLabel.setText("\u5df2\u5e94\u7528 " + preset.getName());
     }
 
     /**

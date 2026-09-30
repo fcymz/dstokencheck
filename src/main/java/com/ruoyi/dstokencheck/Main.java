@@ -2,6 +2,7 @@ package com.ruoyi.dstokencheck;
 
 import com.ruoyi.dstokencheck.autostart.AutoStart;
 import com.ruoyi.dstokencheck.config.AppConfig;
+import com.ruoyi.dstokencheck.config.Preset;
 import com.ruoyi.dstokencheck.model.BalanceSnapshot;
 import com.ruoyi.dstokencheck.model.Wallet;
 import com.ruoyi.dstokencheck.net.DeepSeekClient;
@@ -43,6 +44,11 @@ public final class Main {
 
         if (args.length > 0 && "--autostart".equals(args[0])) {
             runAutoStartCommand(args);
+            return;
+        }
+
+        if (args.length > 0 && "--preset".equals(args[0])) {
+            runPresetCommand(args);
             return;
         }
 
@@ -251,7 +257,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[15];
+        boolean[] pass = new boolean[16];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -359,6 +365,8 @@ public final class Main {
             pass[13] = checkIrregularCropMatchesWindow();
 
             pass[14] = checkTransparentPicture();
+
+            pass[15] = checkBundledPreset(menu);
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -1303,7 +1311,7 @@ public final class Main {
             });
 
             // Now the same picture with no see-through pixels at all.
-            config.restoreBackgroundImageName("");
+            config.setBackgroundImageName("");
             config.storeBackgroundImage(opaqueAlpha);
             config.save();
             final boolean[] stayedOpaque = {false};
@@ -1370,6 +1378,119 @@ public final class Main {
 
     private static int blue(int rgb) {
         return rgb & 0xFF;
+    }
+
+    /**
+     * The bundled preset has to be complete and harmless: it must carry the whole look, and it must
+     * carry no credential and no window position.
+     *
+     * <p>The credential half is checked twice on purpose — once against the shipped file (so a
+     * future edit that pastes a settings file in wholesale is caught at the source) and once against
+     * a freshly applied config (so the applier cannot be the thing that copies one in).
+     */
+    private static boolean checkBundledPreset(JPopupMenu menu) {
+        java.util.List<Preset> presets = Preset.bundled();
+        if (presets.isEmpty()) {
+            System.out.println("FAIL  \u9884\u8bbe\u914d\u7f6e: \u6ca1\u6709\u627e\u5230\u5185\u7f6e\u9884\u8bbe");
+            return false;
+        }
+        Preset preset = presets.get(0);
+        // One click means the menu really offers it, not just that the file exists.
+        javax.swing.JMenu presetMenu = findSubMenu(menu, "\u9884\u8bbe\u914d\u7f6e");
+        boolean inMenu = presetMenu != null && findMenuItem(presetMenu, preset.getName()) != null;
+        AppConfig config = new AppConfig();
+        config.removeBackgroundImage();
+        config.clearCredentials();
+        config.save();
+        try {
+            boolean named = preset.getName().contains("\u84dd\u8272\u5927\u80a5\u9c7c");
+
+            // Nothing credential-shaped may appear in the shipped preset file.
+            boolean fileClean = true;
+            java.io.InputStream in = Preset.class.getResourceAsStream(
+                    "/presets/" + preset.getId() + "/preset.properties");
+            if (in == null) {
+                fileClean = false;
+            } else {
+                try {
+                    java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+                    byte[] chunk = new byte[4096];
+                    int read;
+                    while ((read = in.read(chunk)) > 0) {
+                        buffer.write(chunk, 0, read);
+                    }
+                    String text = new String(buffer.toByteArray(), "UTF-8");
+                    // Comment lines are allowed to name the keys; real settings are not.
+                    for (String line : text.split("\n")) {
+                        String trimmed = line.trim();
+                        if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                            continue;
+                        }
+                        if (trimmed.startsWith("apiKeyProtected") || trimmed.startsWith("rememberApiKey")) {
+                            fileClean = false;
+                        }
+                    }
+                } finally {
+                    in.close();
+                }
+            }
+
+            Rectangle positionBefore = config.getBounds();
+            preset.applyTo(config);
+            AppConfig reloaded = new AppConfig();
+            java.io.File image = reloaded.getBackgroundImageFile();
+            boolean imageCopied = image != null && image.isFile() && image.length() > 1000;
+            boolean cropKept = reloaded.hasImageCrop();
+            java.awt.geom.Rectangle2D.Float region = reloaded.getBalanceRegion();
+            boolean regionKept = region != null && Math.abs(region.y - 0.6705f) < 0.002f;
+            boolean colorKept = reloaded.getBalanceTextColor().equals(new java.awt.Color(0x54A0FF));
+            boolean scaleKept = Math.abs(reloaded.getFontScale() - 1.4f) < 0.01f;
+            boolean sizeKept = reloaded.getBounds().width == 336 && reloaded.getBounds().height == 335;
+            // A preset brings a size, never a spot on the screen.
+            boolean positionKept = reloaded.getBounds().x == positionBefore.x
+                    && reloaded.getBounds().y == positionBefore.y;
+            boolean noCredentials = reloaded.getProtectedApiKey().isEmpty()
+                    && !reloaded.isRememberApiKey();
+
+            boolean ok = named && inMenu && fileClean && imageCopied && cropKept && regionKept
+                    && colorKept && scaleKept && sizeKept && positionKept && noCredentials;
+            System.out.println((ok ? "PASS" : "FAIL") + "  \u9884\u8bbe\u914d\u7f6e"
+                    + " (" + preset.getName()
+                    + ", \u83dc\u5355\u91cc\u53ef\u9009=" + inMenu
+                    + ", \u56fe\u7247\u5df2\u590d\u5236=" + imageCopied
+                    + ", \u88c1\u526a=" + cropKept + ", \u4f59\u989d\u6846=" + regionKept
+                    + ", \u989c\u8272=" + colorKept + ", \u5b57\u53f7=" + scaleKept
+                    + ", \u5c3a\u5bf8=" + sizeKept
+                    + ", \u4e0d\u6539\u7a97\u53e3\u4f4d\u7f6e=" + positionKept
+                    + ", \u4e0d\u5e26\u51ed\u636e=" + (fileClean && noCredentials) + ")");
+            return ok;
+        } catch (Exception e) {
+            System.out.println("FAIL  \u9884\u8bbe\u914d\u7f6e: " + e);
+            return false;
+        } finally {
+            resetSelftestConfig();
+        }
+    }
+
+    /**
+     * Puts the throwaway settings back to a neutral state.
+     *
+     * <p>The self test reuses one temporary home across runs, so a check that changes the font
+     * scale or the card size has to put them back — otherwise the next run starts from the previous
+     * one's leftovers and unrelated checks fail for no reason.
+     */
+    private static void resetSelftestConfig() {
+        AppConfig fresh = new AppConfig();
+        fresh.removeBackgroundImage();
+        fresh.clearCredentials();
+        fresh.setRefreshSeconds(60);
+        fresh.setFontScale(1f);
+        fresh.setOpacity(1f);
+        fresh.setAlwaysOnTop(true);
+        fresh.setBalanceRegion(null);
+        fresh.setBalanceTextColor(new java.awt.Color(0xE9, 0xEE, 0xF8));
+        fresh.setBounds(new Rectangle(-1, -1, 360, 180));
+        fresh.save();
     }
 
     /** Writes a flat-colour PNG, used as a stand-in for a user's background image. */
@@ -1544,6 +1665,44 @@ public final class Main {
 
     private static String orNone(String s) {
         return (s == null || s.isEmpty()) ? "(无)" : s;
+    }
+
+    /**
+     * {@code --preset [id]} — list the bundled looks, or apply one and exit.
+     *
+     * <p>Same thing the right-click menu does, for a machine that is being set up from a script.
+     */
+    private static void runPresetCommand(String[] args) {
+        java.util.List<Preset> presets = Preset.bundled();
+        if (args.length < 2) {
+            System.out.println("可用的预设配置：");
+            for (Preset preset : presets) {
+                System.out.println("  " + preset.getId() + "    " + preset.getName()
+                        + (preset.getDescription().isEmpty() ? "" : "    (" + preset.getDescription() + ")"));
+            }
+            System.out.println();
+            System.out.println("用法: java -jar dstokencheck.jar --preset <id>");
+            return;
+        }
+        String wanted = args[1].trim();
+        for (Preset preset : presets) {
+            if (!preset.getId().equalsIgnoreCase(wanted) && !preset.getName().equals(wanted)) {
+                continue;
+            }
+            AppConfig config = new AppConfig();
+            try {
+                preset.applyTo(config);
+            } catch (Exception e) {
+                System.err.println("应用预设失败: " + e.getMessage());
+                System.exit(1);
+            }
+            System.out.println("已应用预设: " + preset.getName());
+            System.out.println("配置文件  : " + config.getFile().getAbsolutePath());
+            System.out.println("背景图    : " + orNone(String.valueOf(config.getBackgroundImageFile())));
+            return;
+        }
+        System.err.println("找不到预设: " + wanted);
+        System.exit(1);
     }
 
     private static void runDiagnostics(String[] args) {        if (args.length < 2) {

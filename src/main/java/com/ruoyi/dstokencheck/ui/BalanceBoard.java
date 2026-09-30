@@ -325,6 +325,7 @@ public class BalanceBoard extends JFrame {
         applyFonts();
 
         JPopupMenu menu = buildContextMenu();
+        MenuSkin.apply(menu);
         board.setComponentPopupMenu(menu);
         titleLabel.setComponentPopupMenu(menu);
         amountLabel.setComponentPopupMenu(menu);
@@ -1450,6 +1451,9 @@ public class BalanceBoard extends JFrame {
         openFolder.setToolTipText("\u81ea\u5df1\u4fdd\u5b58\u7684\u9884\u8bbe\u90fd\u5728\u8fd9\u91cc\uff0c\u53ef\u4ee5\u590d\u5236\u7ed9\u522b\u4eba");
         openFolder.addActionListener(e -> openPresetFolder());
         presetMenu.add(openFolder);
+
+        // The items were just replaced, so they need the app's own look again.
+        MenuSkin.apply(presetMenu.getPopupMenu());
     }
 
     /**
@@ -1528,7 +1532,7 @@ public class BalanceBoard extends JFrame {
         String suggested = existing.isEmpty() ? "" : existing.get(existing.size() - 1).getName();
         TextPromptDialog dialog = new TextPromptDialog(this,
                 "\u4fdd\u5b58\u4e3a\u9884\u8bbe\u914d\u7f6e",
-                "\u540d\u5b57\u968f\u4f60\u53d6\uff0c\u4e4b\u540e\u53f3\u952e\u83dc\u5355\u91cc\u4e00\u952e\u5957\u7528",
+                "\u8f93\u5165\u9884\u8bbe\u914d\u7f6e\u540d",
                 suggested,
                 text -> {
                     String name = text == null ? "" : text.trim();

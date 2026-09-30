@@ -257,7 +257,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[17];
+        boolean[] pass = new boolean[18];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -369,6 +369,8 @@ public final class Main {
             pass[15] = checkBundledPreset(menu);
 
             pass[16] = checkUserPreset();
+
+            pass[17] = checkMenuSkin(menu);
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -1608,6 +1610,117 @@ public final class Main {
             source.delete();
             resetSelftestConfig();
         }
+    }
+
+    /**
+     * The right-click menu has to wear the app's own colours, and only the right rows may carry a
+     * glyph.
+     *
+     * <p>The second half is not hypothetical: the look and feel paints the check and arrow icons for
+     * <em>any</em> item whose icon field is set, so a first attempt put a tick and a chevron on
+     * every single row. The render is inspected by pixels for exactly that reason — a stray tick is
+     * invisible to any assertion about colours.
+     */
+    private static boolean checkMenuSkin(final JPopupMenu menu) throws Exception {
+        if (menu == null) {
+            System.out.println("FAIL  \u53f3\u952e\u83dc\u5355\u5916\u89c2: \u6ca1\u6709\u83dc\u5355");
+            return false;
+        }
+        boolean popupSkinned = menu.getUI() != null
+                && menu.getUI().getClass().getName().contains("MenuSkin");
+        boolean surface = com.ruoyi.dstokencheck.ui.Theme.SURFACE.equals(menu.getBackground());
+        boolean padded = menu.getBorder() != null
+                && menu.getBorder().getBorderInsets(menu).left >= 4;
+
+        menu.setSize(menu.getPreferredSize());
+        menu.doLayout();
+        final java.awt.image.BufferedImage shot = new java.awt.image.BufferedImage(
+                Math.max(1, menu.getWidth()), Math.max(1, menu.getHeight()),
+                java.awt.image.BufferedImage.TYPE_INT_RGB);
+        SwingUtilities.invokeAndWait(new Runnable() {
+            @Override
+            public void run() {
+                java.awt.Graphics2D g = shot.createGraphics();
+                try {
+                    // A light backdrop: anything the menu fails to paint shows up as light, so the
+                    // "is this row on the dark surface" question has an answer.
+                    g.setColor(java.awt.Color.WHITE);
+                    g.fillRect(0, 0, shot.getWidth(), shot.getHeight());
+                    menu.paint(g);
+                } finally {
+                    g.dispose();
+                }
+            }
+        });
+
+        int rows = 0;
+        int rowsSkinned = 0;
+        int plainWithGlyph = 0;
+        int submenuWithoutGlyph = 0;
+        int strayTick = 0;
+        int lightRows = 0;
+        for (java.awt.Component component : menu.getComponents()) {
+            if (!(component instanceof JMenuItem)) {
+                continue;
+            }
+            JMenuItem item = (JMenuItem) component;
+            rows++;
+            if (item.getUI() != null && item.getUI().getClass().getName().contains("MenuSkin")) {
+                rowsSkinned++;
+            }
+            int top = Math.max(0, item.getY());
+            int height = Math.min(item.getHeight(), shot.getHeight() - top);
+            if (height <= 0) {
+                continue;
+            }
+            // Right gutter: where a submenu chevron belongs.
+            boolean rightGlyph = hasInk(shot, item.getX() + item.getWidth() - 20, top, 18, height);
+            // Just before the text starts: where a stray tick would land.
+            boolean leftGlyph = hasInk(shot, item.getX() + 2, top, 9, height);
+            boolean lightRow = !hasInk(shot, item.getX() + 40, top, 40, height);
+            if (item instanceof javax.swing.JMenu) {
+                if (!rightGlyph) {
+                    submenuWithoutGlyph++;
+                }
+            } else {
+                if (rightGlyph) {
+                    plainWithGlyph++;
+                }
+                if (leftGlyph && !(item instanceof javax.swing.JCheckBoxMenuItem)) {
+                    strayTick++;
+                }
+            }
+            if (lightRow) {
+                lightRows++;
+            }
+        }
+
+        boolean ok = popupSkinned && surface && padded && rows > 0 && rowsSkinned == rows
+                && plainWithGlyph == 0 && submenuWithoutGlyph == 0 && strayTick == 0 && lightRows == 0;
+        System.out.println((ok ? "PASS" : "FAIL") + "  \u53f3\u952e\u83dc\u5355\u5916\u89c2"
+                + " (\u9762\u677f\u5df2\u6362\u80a4=" + popupSkinned
+                + ", \u5e95\u8272=\u5e94\u7528\u8868\u9762\u8272=" + surface
+                + ", \u5185\u8fb9\u8ddd=" + padded
+                + ", \u884c\u5df2\u6362\u80a4=" + rowsSkinned + "/" + rows
+                + ", \u666e\u901a\u884c\u591a\u4f59\u7bad\u5934=" + plainWithGlyph
+                + ", \u5b50\u83dc\u5355\u7f3a\u7bad\u5934=" + submenuWithoutGlyph
+                + ", \u591a\u4f59\u52fe=" + strayTick
+                + ", \u6ca1\u753b\u4e0a\u7684\u767d\u884c=" + lightRows + ")");
+        return ok;
+    }
+
+    /** True when any pixel in the box is brighter than the menu surface (text, tint or icon). */
+    private static boolean hasInk(java.awt.image.BufferedImage image, int x, int y, int w, int h) {
+        for (int yy = Math.max(0, y); yy < Math.min(image.getHeight(), y + h); yy++) {
+            for (int xx = Math.max(0, x); xx < Math.min(image.getWidth(), x + w); xx++) {
+                int rgb = image.getRGB(xx, yy);
+                int sum = ((rgb >> 16) & 0xFF) + ((rgb >> 8) & 0xFF) + (rgb & 0xFF);
+                if (sum > 200) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Writes a flat-colour PNG, used as a stand-in for a user's background image. */

@@ -251,7 +251,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[13];
+        boolean[] pass = new boolean[14];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -355,6 +355,8 @@ public final class Main {
             pass[11] = checkBackgroundRegionEditor();
 
             pass[12] = checkCropMatchesWindow();
+
+            pass[13] = checkIrregularCropMatchesWindow();
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -949,7 +951,6 @@ public final class Main {
                 sg.dispose();
             }
             javax.imageio.ImageIO.write(stripes, "png", source);
-
             config.storeBackgroundImage(source);
             // The middle half of the picture: green then blue. 2:1.
             config.setImageCrop(new java.awt.geom.Rectangle2D.Float(0.25f, 0f, 0.5f, 1f));
@@ -1043,10 +1044,177 @@ public final class Main {
         }
     }
 
+    /**
+     * An irregular crop must shape the window to the outline itself, not just size it.
+     *
+     * <p>Two halves. First the lasso machinery: a dense trace has to come back as a simplified
+     * outline, not as a rectangle and not as hundreds of points. Then the result: with a diamond
+     * crop the window's own region must contain the middle and exclude the corners, and the painted
+     * corners must be blank — which is what "the window's edge is the crop's edge" means once the
+     * outline stops being a box.
+     */
+    private static boolean checkIrregularCropMatchesWindow() {
+        final int cardW = 400;
+        final int cardH = 200;
+        AppConfig config = new AppConfig();
+        config.removeBackgroundImage();
+        java.io.File source = new java.io.File(AppConfig.directory(), "selftest-outline.png");
+        final BalanceBoard[] ref = new BalanceBoard[1];
+        try {
+            writeStripeImage(source, 400, 100);
+
+            // ---- the lasso: a dense circle trace, in image fractions ----
+            java.util.List<java.awt.geom.Point2D.Float> trace =
+                    new java.util.ArrayList<java.awt.geom.Point2D.Float>();
+            for (int i = 0; i <= 240; i++) {
+                double a = 2 * Math.PI * i / 240.0;
+                trace.add(new java.awt.geom.Point2D.Float(
+                        (float) (0.5 + 0.35 * Math.cos(a)), (float) (0.5 + 0.35 * Math.sin(a))));
+            }
+            com.ruoyi.dstokencheck.model.CropShape traced =
+                    com.ruoyi.dstokencheck.model.CropShape.fromTrace(trace, 0.006f);
+            java.awt.geom.Rectangle2D.Float tb = traced == null ? null : traced.bounds();
+            boolean traceSimplified = traced != null
+                    && !traced.isRectangle()
+                    && traced.size() >= 8 && traced.size() <= com.ruoyi.dstokencheck.model.CropShape.MAX_POINTS
+                    && tb != null
+                    && Math.abs(tb.x - 0.15f) < 0.02f && Math.abs(tb.y - 0.15f) < 0.02f
+                    && Math.abs(tb.width - 0.70f) < 0.02f && Math.abs(tb.height - 0.70f) < 0.02f;
+
+            // ---- the diamond: corners cut off, edge midpoints kept ----
+            java.util.List<java.awt.geom.Point2D.Float> diamond =
+                    new java.util.ArrayList<java.awt.geom.Point2D.Float>();
+            diamond.add(new java.awt.geom.Point2D.Float(0.50f, 0.10f));
+            diamond.add(new java.awt.geom.Point2D.Float(0.90f, 0.50f));
+            diamond.add(new java.awt.geom.Point2D.Float(0.50f, 0.90f));
+            diamond.add(new java.awt.geom.Point2D.Float(0.10f, 0.50f));
+
+            config.storeBackgroundImage(source);
+            config.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.40f, 0.42f, 0.20f, 0.16f));
+            config.setBalanceTextColor(java.awt.Color.WHITE);
+            config.setCropShape(com.ruoyi.dstokencheck.model.CropShape.of(diamond));
+            config.setBounds(new Rectangle(60, 60, cardW, cardH));
+            config.save();
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    DeepSeekClient demoClient = new DeepSeekClient();
+                    demoClient.setApiKey("sk-demo-000000000000000000000000");
+                    BalanceBoard b = new BalanceBoard(config, demoClient, null);
+                    b.setLocation(-4000, -4000);
+                    b.setVisible(true);
+                    b.start();
+                    ref[0] = b;
+                }
+            });
+            Thread.sleep(700);
+
+            Rectangle bounds = ref[0].getBounds();
+            // The outline spans 0.1..0.9 of a 400x100 picture, so the window has to come out 4:1.
+            double expectedAspect = 0.80 * 400 / (0.80 * 100);
+            boolean aspectFitted =
+                    Math.abs(bounds.width / (double) bounds.height - expectedAspect) < 0.1;
+
+            // The window region itself, as the OS sees it.
+            java.awt.Shape windowShape = ref[0].getShape();
+            boolean shapeIsOutline = windowShape != null
+                    && windowShape.contains(bounds.width / 2.0, bounds.height / 2.0)
+                    && !windowShape.contains(2.0, 2.0)
+                    && !windowShape.contains(bounds.width - 2.0, bounds.height - 2.0);
+
+            final java.awt.image.BufferedImage shot = new java.awt.image.BufferedImage(
+                    bounds.width, bounds.height, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    java.awt.Graphics2D g = shot.createGraphics();
+                    try {
+                        ref[0].paint(g);
+                    } finally {
+                        g.dispose();
+                    }
+                }
+            });
+
+            int empty = new java.awt.Color(
+                    com.ruoyi.dstokencheck.ui.Theme.BG_BOTTOM.getRGB()).getRGB();
+            int[][] inside = {
+                {bounds.width / 2, bounds.height / 8},
+                {bounds.width / 8, bounds.height / 2},
+                {bounds.width * 7 / 8, bounds.height / 2},
+                {bounds.width / 2, bounds.height * 7 / 8},
+            };
+            boolean insidePainted = true;
+            for (int[] p : inside) {
+                if (shot.getRGB(p[0], p[1]) == empty) {
+                    insidePainted = false;
+                    break;
+                }
+            }
+            int[][] corners = {
+                {2, 2}, {bounds.width - 3, 2},
+                {2, bounds.height - 3}, {bounds.width - 3, bounds.height - 3},
+            };
+            boolean cornersEmpty = true;
+            for (int[] p : corners) {
+                if (shot.getRGB(p[0], p[1]) != empty) {
+                    cornersEmpty = false;
+                    break;
+                }
+            }
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].dispose();
+                }
+            });
+
+            boolean ok = traceSimplified && aspectFitted && shapeIsOutline
+                    && insidePainted && cornersEmpty;
+            System.out.println((ok ? "PASS" : "FAIL") + "  \u4e0d\u89c4\u5219\u88c1\u526a"
+                    + " (\u624b\u7ed8\u8f6e\u5ed3\u5df2\u7b80\u5316=" + traceSimplified
+                    + (traced == null ? "" : " " + traced.size() + "\u70b9")
+                    + ", \u7a97\u53e3\u6bd4\u4f8b\u8ddf\u968f=" + aspectFitted
+                    + ", \u7a97\u53e3\u5f62\u72b6=\u8f6e\u5ed3=" + shapeIsOutline
+                    + ", \u8f6e\u5ed3\u5185\u6709\u56fe=" + insidePainted
+                    + ", \u56db\u89d2\u5df2\u88c1\u6389=" + cornersEmpty + ")");
+            return ok;
+        } catch (Exception e) {
+            System.out.println("FAIL  \u4e0d\u89c4\u5219\u88c1\u526a: " + e);
+            return false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            source.delete();
+            config.removeBackgroundImage();
+        }
+    }
+
+    /** A picture of four fat vertical stripes: which part is on screen is then obvious. */
+    private static void writeStripeImage(java.io.File target, int w, int h)
+            throws java.io.IOException {
+        java.awt.image.BufferedImage img =
+                new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = img.createGraphics();
+        try {
+            java.awt.Color[] colors = {
+                new java.awt.Color(0xC0, 0x20, 0x20), new java.awt.Color(0x20, 0xC0, 0x40),
+                new java.awt.Color(0x20, 0x60, 0xE0), new java.awt.Color(0xE0, 0xC0, 0x20),
+            };
+            for (int i = 0; i < colors.length; i++) {
+                g.setColor(colors[i]);
+                g.fillRect(i * (w / colors.length), 0, w / colors.length, h);
+            }
+        } finally {
+            g.dispose();
+        }
+        javax.imageio.ImageIO.write(img, "png", target);
+    }
+
     private static int red(int rgb) {
         return (rgb >> 16) & 0xFF;
     }
-
     private static int green(int rgb) {
         return (rgb >> 8) & 0xFF;
     }

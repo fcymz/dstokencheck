@@ -1,6 +1,7 @@
 package com.ruoyi.dstokencheck.ui;
 
 import com.ruoyi.dstokencheck.config.AppConfig;
+import com.ruoyi.dstokencheck.model.CropShape;
 
 import javax.imageio.ImageIO;
 import javax.swing.AbstractAction;
@@ -51,6 +52,8 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.awt.geom.Area;
+import java.awt.geom.Path2D;
+import java.awt.geom.Point2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
@@ -95,6 +98,12 @@ public class BackgroundRegionDialog extends JDialog {
     private static final int PREVIEW_H = 150;
     /** Longest side of the copy the canvas paints from; the original stays for all geometry. */
     private static final int DISPLAY_MAX_SIDE = 1600;
+    /** What the canvas edits: the balance box, a rectangular crop, or a traced outline. */
+    private static final int MODE_REGION = 0;
+    private static final int MODE_RECT = 1;
+    private static final int MODE_FREE = 2;
+    /** How far a simplified freehand outline may stray from the trace, in image fractions. */
+    private static final float TRACE_TOLERANCE = 0.006f;
 
     /** One-click colours; the field below the chips accepts any other value. */
     private static final int[] PRESET_COLORS = {
@@ -147,7 +156,8 @@ public class BackgroundRegionDialog extends JDialog {
     private final FlatButton oneToOneButton = new FlatButton("1:1", FlatButton.Kind.SECONDARY);
     private final FlatButton resetButton = new FlatButton("\u91cd\u7f6e\u533a\u57df", FlatButton.Kind.SECONDARY);
     private final FlatButton regionModeButton = new FlatButton("\u4f59\u989d\u533a\u57df", FlatButton.Kind.SECONDARY);
-    private final FlatButton cropModeButton = new FlatButton("\u88c1\u526a\u56fe\u7247", FlatButton.Kind.SECONDARY);
+    private final FlatButton rectModeButton = new FlatButton("\u77e9\u5f62\u88c1\u526a", FlatButton.Kind.SECONDARY);
+    private final FlatButton freeModeButton = new FlatButton("\u81ea\u7531\u88c1\u526a", FlatButton.Kind.SECONDARY);
     private final FlatButton saveButton =
             new FlatButton("\u4fdd\u5b58\u5e76\u5e94\u7528", FlatButton.Kind.PRIMARY);
 
@@ -156,7 +166,8 @@ public class BackgroundRegionDialog extends JDialog {
 
     private Color textColor;
     /** True while the canvas edits the crop instead of the balance box. */
-    private boolean cropMode;
+    /** Which box the canvas edits: MODE_REGION, MODE_RECT or MODE_FREE. */
+    private int mode = MODE_REGION;
     private boolean confirmed;
     private Point dragOrigin;
     private Point windowOrigin;
@@ -173,7 +184,7 @@ public class BackgroundRegionDialog extends JDialog {
         if (image != null && region == null) {
             region = AppConfig.defaultBalanceRegion();
         }
-        canvas = new ImageCanvas(image, config.getEffectiveCrop(), region);
+        canvas = new ImageCanvas(image, config.getEffectiveCropShape(), region);
 
         setUndecorated(true);
         setBackground(Theme.BG_BOTTOM);
@@ -189,7 +200,7 @@ public class BackgroundRegionDialog extends JDialog {
         updateEnabledState();
         setStatus(image == null
                 ? "\u5148\u9009\u4e00\u5f20\u80cc\u666f\u56fe"
-                : "\u62d6\u62fd\u6846\u51fa\u4f59\u989d\u663e\u793a\u533a\u57df\uff1b\u5207\u5230\u300c\u88c1\u526a\u56fe\u7247\u300d\u53ef\u88c1\u6389\u4e0d\u8981\u7684\u8fb9\u7f18", false);
+                : "\u62d6\u62fd\u6846\u51fa\u4f59\u989d\u663e\u793a\u533a\u57df\uff1b\u5207\u5230\u88c1\u526a\u6a21\u5f0f\u53ef\u88c1\u6389\u591a\u4f59\u8fb9\u7f18", false);
         sizeAndCentre(owner);
 
         // The widget is always-on-top, so this window has to be too or it opens behind it.
@@ -332,11 +343,13 @@ public class BackgroundRegionDialog extends JDialog {
         choose.addActionListener(e -> chooseImage());
         left.add(choose);
 
-        // Two edit modes share one canvas: what a drag does depends on which one is lit.
-        regionModeButton.addActionListener(e -> setCropMode(false));
+        // Three edit modes share one canvas: what a drag does depends on which one is lit.
+        regionModeButton.addActionListener(e -> setMode(MODE_REGION));
         left.add(regionModeButton);
-        cropModeButton.addActionListener(e -> setCropMode(true));
-        left.add(cropModeButton);
+        rectModeButton.addActionListener(e -> setMode(MODE_RECT));
+        left.add(rectModeButton);
+        freeModeButton.addActionListener(e -> setMode(MODE_FREE));
+        left.add(freeModeButton);
 
         resetButton.addActionListener(e -> resetActiveBox());
         left.add(resetButton);
@@ -364,11 +377,11 @@ public class BackgroundRegionDialog extends JDialog {
     }
 
     /** Switches what the canvas edits, and keeps every mode-dependent label honest. */
-    private void setCropMode(boolean crop) {
-        if (cropMode == crop) {
+    private void setMode(int which) {
+        if (mode == which) {
             return;
         }
-        cropMode = crop;
+        mode = which;
         canvas.forgetGesture();
         updateModeControls();
         updateReadout();
@@ -377,15 +390,21 @@ public class BackgroundRegionDialog extends JDialog {
         canvas.requestFocusInWindow();
     }
 
+    /** True while the canvas is editing the crop rather than the balance box. */
+    private boolean cropMode() {
+        return mode != MODE_REGION;
+    }
+
     private void updateModeControls() {
-        regionModeButton.setActive(!cropMode);
-        cropModeButton.setActive(cropMode);
-        resetButton.setText(cropMode ? "\u91cd\u7f6e\u88c1\u526a" : "\u91cd\u7f6e\u533a\u57df");
+        regionModeButton.setActive(mode == MODE_REGION);
+        rectModeButton.setActive(mode == MODE_RECT);
+        freeModeButton.setActive(mode == MODE_FREE);
+        resetButton.setText(cropMode() ? "\u91cd\u7f6e\u88c1\u526a" : "\u91cd\u7f6e\u533a\u57df");
     }
 
     private void resetActiveBox() {
-        if (cropMode) {
-            canvas.setCrop(BackgroundLayout.fullCrop());
+        if (cropMode()) {
+            canvas.setCrop(CropShape.rectangle(BackgroundLayout.fullCrop()));
             setStatus("\u5df2\u53d6\u6d88\u88c1\u526a\uff0c\u5c0f\u7a97\u53e3\u5c06\u663e\u793a\u6574\u5f20\u56fe\u7247", false);
         } else {
             canvas.setRegion(AppConfig.defaultBalanceRegion());
@@ -467,6 +486,7 @@ public class BackgroundRegionDialog extends JDialog {
             "\u62d6\u62fd\u7a7a\u767d\u5904 \u2192 \u65b0\u5efa\u533a\u57df",
             "\u62d6\u62fd\u6846\u5185 \u2192 \u79fb\u52a8\u533a\u57df",
             "\u62d6\u62fd\u516b\u4e2a\u5c0f\u65b9\u5757 \u2192 \u7f29\u653e\u533a\u57df",
+            "\u300c\u81ea\u7531\u88c1\u526a\u300d\u91cc\u62d6\u62fd \u2192 \u624b\u7ed8\u8f6e\u5ed3",
             "\u65b9\u5411\u952e\u5fae\u8c03\uff0cShift \u52a0\u901f",
             "Ctrl + \u6eda\u8f6e \u2192 \u7f29\u653e\u753b\u5e03",
         }) {
@@ -632,7 +652,7 @@ public class BackgroundRegionDialog extends JDialog {
             setStatus("\u8bf7\u5148\u5728\u56fe\u7247\u4e0a\u62d6\u62fd\u6846\u51fa\u663e\u793a\u533a\u57df", true);
             return;
         }
-        config.setImageCrop(canvas.getCrop());
+        config.setCropShape(canvas.getCrop());
         config.setBalanceRegion(region);
         config.setBalanceTextColor(textColor);
         config.save();
@@ -687,19 +707,22 @@ public class BackgroundRegionDialog extends JDialog {
 
     private void updateReadout() {
         Rectangle2D.Float r = canvas.getRegion();
-        Rectangle2D.Float crop = canvas.getCrop();
+        Rectangle2D.Float crop = canvas.getCropBounds();
+        CropShape shape = canvas.getCrop();
         BufferedImage image = canvas.getImage();
         if (r == null || image == null) {
             readoutLabel.setText(" ");
             sizeLabel.setText(" ");
             return;
         }
-        if (cropMode) {
+        if (cropMode()) {
             // Pixels, not percentages: when deciding what to keep, the real size is what matters.
             readoutLabel.setText(String.format(Locale.ROOT,
-                    "\u88c1\u526a  %.0f \u00d7 %.0f \u50cf\u7d20  \u6bd4\u4f8b %.2f:1",
+                    "\u88c1\u526a  %.0f \u00d7 %.0f \u50cf\u7d20  \u6bd4\u4f8b %.2f:1%s",
                     crop.width * image.getWidth(), crop.height * image.getHeight(),
-                    BackgroundLayout.cropAspect(crop, image.getWidth(), image.getHeight())));
+                    BackgroundLayout.cropAspect(crop, image.getWidth(), image.getHeight()),
+                    shape.isRectangle() ? "" : String.format(Locale.ROOT,
+                            "  \u00b7  %d \u4e2a\u9876\u70b9", shape.size())));
         } else {
             readoutLabel.setText(String.format(Locale.ROOT,
                     "\u533a\u57df  \u5bbd %.0f%%  \u9ad8 %.0f%%  \u5de6 %.0f%%  \u4e0a %.0f%%",
@@ -712,14 +735,16 @@ public class BackgroundRegionDialog extends JDialog {
         double widgetH = widgetW / BackgroundLayout.cropAspect(crop, image.getWidth(), image.getHeight());
         double regionW = r.width / crop.width * widgetW;
         double regionH = r.height / crop.height * widgetH;
-        if (BackgroundLayout.contains(crop, r)) {
+        // An irregular outline can cut the number even when the box is inside the frame, so the
+        // silhouette itself is what the warning is measured against.
+        if (shape.contains(r)) {
             sizeLabel.setForeground(Theme.alpha(Theme.ACCENT_SOFT, 210));
             sizeLabel.setText(String.format(Locale.ROOT,
                     "\u5c0f\u7a97\u53e3\u5185\u7ea6 %.0f \u00d7 %.0f \u50cf\u7d20", regionW, regionH));
         } else {
             // Otherwise the number would be silently cut by the window's edge.
             sizeLabel.setForeground(Theme.WARN);
-            sizeLabel.setText("\u4f59\u989d\u533a\u57df\u8d85\u51fa\u88c1\u526a\u8303\u56f4\uff0c\u6570\u5b57\u4f1a\u88ab\u622a\u65ad");
+            sizeLabel.setText("\u4f59\u989d\u533a\u57df\u8d85\u51fa\u88c1\u526a\u8f6e\u5ed3\uff0c\u6570\u5b57\u4f1a\u88ab\u622a\u65ad");
         }
     }
 
@@ -893,8 +918,10 @@ public class BackgroundRegionDialog extends JDialog {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
                 BufferedImage image = canvas.getImage();
+                CropShape shape = canvas.getCrop();
+                Rectangle2D.Float cropBounds = canvas.getCropBounds();
                 double aspect = image == null ? 2.0
-                        : BackgroundLayout.cropAspect(canvas.getCrop(),
+                        : BackgroundLayout.cropAspect(cropBounds,
                                 image.getWidth(), image.getHeight());
                 int w = getWidth();
                 int h = (int) Math.round(w / Math.max(0.25, aspect));
@@ -907,14 +934,17 @@ public class BackgroundRegionDialog extends JDialog {
                 int x = (getWidth() - w) / 2;
                 int y = (getHeight() - h) / 2;
 
-                Shape cardShape = new RoundRectangle2D.Float(x, y, w - 1, h - 1, 14, 14);
+                // The miniature has to be cut to the same silhouette as the window, or it would
+                // promise a rectangular card the user is not going to get.
+                Shape cardShape = shape.isRectangle()
+                        ? new RoundRectangle2D.Float(x, y, w - 1, h - 1, 14, 14)
+                        : shape.toPath(new Rectangle(x, y, w, h));
                 Shape old = g2.getClip();
                 g2.clip(cardShape);
                 g2.translate(x, y);
 
                 if (image != null) {
-                    Rectangle2D.Float crop = canvas.getCrop();
-                    Rectangle cover = BackgroundLayout.imageRect(crop,
+                    Rectangle cover = BackgroundLayout.imageRect(cropBounds,
                             image.getWidth(), image.getHeight(), w, h);
                     g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                             RenderingHints.VALUE_INTERPOLATION_BILINEAR);
@@ -929,7 +959,7 @@ public class BackgroundRegionDialog extends JDialog {
 
                 Rectangle2D.Float region = canvas.getRegion();
                 if (image != null && region != null) {
-                    Rectangle cover = BackgroundLayout.imageRect(canvas.getCrop(),
+                    Rectangle cover = BackgroundLayout.imageRect(cropBounds,
                             image.getWidth(), image.getHeight(), w, h);
                     Rectangle2D.Float box = BackgroundLayout.regionOn(region, cover, w, h);
                     if (box != null) {
@@ -998,27 +1028,30 @@ public class BackgroundRegionDialog extends JDialog {
         private static final int CREATE = 1;
         private static final int MOVE = 2;
         private static final int RESIZE = 3;
+        private static final int TRACE = 4;
 
         private BufferedImage image;
         /** Downscaled copy used for painting; a 24-megapixel photo is re-scaled on every drag. */
         private BufferedImage displayImage;
-        /** Visible part of the picture, normalised to it; never null. */
-        private Rectangle2D.Float crop;
+        /** Visible part of the picture; never null, and a rectangle unless one was traced. */
+        private CropShape crop;
         /** Normalised 0..1 box on the image where the balance goes. */
         private Rectangle2D.Float region;
         private boolean fit = true;
         private double zoom = 1.0;
 
-        private int mode = NONE;
+        private int dragMode = NONE;
         private int handle = -1;
         private int hoverHandle = -1;
         private Point dragStart;
         private Rectangle2D.Float dragStartBox;
+        /** Points of a freehand trace in progress, in canvas coordinates. */
+        private final List<Point> trace = new ArrayList<Point>();
 
-        ImageCanvas(BufferedImage image, Rectangle2D.Float crop, Rectangle2D.Float region) {
+        ImageCanvas(BufferedImage image, CropShape crop, Rectangle2D.Float region) {
             this.image = image;
             this.displayImage = downscale(image);
-            this.crop = crop == null ? BackgroundLayout.fullCrop() : crop;
+            this.crop = crop == null ? CropShape.rectangle(BackgroundLayout.fullCrop()) : crop;
             this.region = region;
             setOpaque(false);
             setFocusable(true);
@@ -1066,23 +1099,34 @@ public class BackgroundRegionDialog extends JDialog {
             boxChanged();
         }
 
-        Rectangle2D.Float getCrop() {
+        CropShape getCrop() {
             return crop;
         }
 
-        void setCrop(Rectangle2D.Float crop) {
-            this.crop = crop == null ? BackgroundLayout.fullCrop() : crop;
+        /** The crop's bounding box, which is what the picture is placed and sized by. */
+        Rectangle2D.Float getCropBounds() {
+            return crop.bounds();
+        }
+
+        void setCrop(CropShape crop) {
+            this.crop = crop == null ? CropShape.rectangle(BackgroundLayout.fullCrop()) : crop;
             boxChanged();
         }
 
-        /** The box the current mode edits. */
+        /**
+         * The box the current mode edits.
+         *
+         * <p>For an irregular crop this is its bounding box: dragging the frame then scales the whole
+         * silhouette with it, which is the only sane way to resize a lassoed outline with a mouse.
+         */
         private Rectangle2D.Float activeBox() {
-            return cropMode ? crop : region;
+            return cropMode() ? crop.bounds() : region;
         }
 
         private void applyActiveBox(Rectangle2D.Float box) {
-            if (cropMode) {
-                crop = box;
+            if (cropMode()) {
+                // Keep the silhouette's shape: map it onto the new frame instead of replacing it.
+                crop = mode == MODE_FREE ? crop.withBounds(box) : CropShape.rectangle(box);
             } else {
                 region = box;
             }
@@ -1091,11 +1135,12 @@ public class BackgroundRegionDialog extends JDialog {
 
         /** Drops any in-progress drag, so a mode switch cannot finish the previous edit. */
         void forgetGesture() {
-            mode = NONE;
+            dragMode = NONE;
             handle = -1;
             hoverHandle = -1;
             dragStart = null;
             dragStartBox = null;
+            trace.clear();
         }
 
         boolean isFit() {
@@ -1151,12 +1196,20 @@ public class BackgroundRegionDialog extends JDialog {
             return BackgroundLayout.regionOn(region, imageRect(), getWidth(), getHeight());
         }
 
-        /** The visible part of the picture in canvas coordinates. */
+        /** The crop's bounding box in canvas coordinates, which is what the handles grab. */
         private Rectangle2D.Float cropRect() {
             if (image == null) {
                 return null;
             }
-            return BackgroundLayout.regionOn(crop, imageRect(), getWidth(), getHeight());
+            return BackgroundLayout.regionOn(crop.bounds(), imageRect(), getWidth(), getHeight());
+        }
+
+        /** The crop's silhouette in canvas coordinates. */
+        private java.awt.Shape cropOutline() {
+            if (image == null) {
+                return null;
+            }
+            return crop.toPath(imageRect());
         }
 
         private void boxChanged() {
@@ -1199,26 +1252,27 @@ public class BackgroundRegionDialog extends JDialog {
 
                     Rectangle2D.Float cropBox = cropRect();
                     Rectangle2D.Float regionBox = regionRect();
+                    java.awt.Shape visible = cropOutline();
 
                     // Everything the crop throws away is pushed back, so the window's edge is
                     // visible on the picture rather than something the user has to imagine.
-                    if (cropBox != null) {
+                    if (visible != null) {
                         Area discarded = new Area(cover);
-                        discarded.subtract(new Area(cropBox));
-                        g2.setColor(new Color(0, 0, 0, cropMode ? 165 : 130));
+                        discarded.subtract(new Area(visible));
+                        g2.setColor(new Color(0, 0, 0, cropMode() ? 165 : 130));
                         g2.fill(discarded);
                     }
                     if (regionBox != null) {
-                        Area outside = new Area(cropBox == null ? cover : cropBox);
+                        Area outside = new Area(visible == null ? cover : visible);
                         outside.subtract(new Area(regionBox));
-                        g2.setColor(new Color(0, 0, 0, cropMode ? 60 : 105));
+                        g2.setColor(new Color(0, 0, 0, cropMode() ? 60 : 105));
                         g2.fill(outside);
                         // The number is previewed in both modes, but only where the window would
                         // actually show it: a region sticking out of the crop is visibly cut here
                         // rather than silently cut on the desktop.
                         Shape overlayClip = g2.getClip();
-                        if (cropBox != null) {
-                            g2.clip(cropBox);
+                        if (visible != null) {
+                            g2.clip(visible);
                         }
                         BalanceTextRenderer.drawRegion(g2, preview.amount, preview.subtitle,
                                 regionBox, textColor);
@@ -1230,16 +1284,20 @@ public class BackgroundRegionDialog extends JDialog {
                     g2.drawRect(cover.x, cover.y, cover.width - 1, cover.height - 1);
 
                     // The inactive box stays visible but quiet, so both are always in view.
-                    if (cropBox != null && cropMode) {
-                        paintThirds(g2, cropBox);
-                    } else if (cropBox != null) {
-                        g2.setColor(Theme.alpha(Color.WHITE, 150));
-                        g2.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND,
-                                BasicStroke.JOIN_ROUND, 1f, new float[]{6f, 5f}, 0f));
-                        g2.draw(cropBox);
+                    if (visible != null) {
+                        g2.setColor(cropMode() ? Color.WHITE : Theme.alpha(Color.WHITE, 150));
+                        g2.setStroke(cropMode()
+                                ? new BasicStroke(2f)
+                                : new BasicStroke(1.4f, BasicStroke.CAP_ROUND,
+                                        BasicStroke.JOIN_ROUND, 1f, new float[]{6f, 5f}, 0f));
+                        g2.draw(visible);
                         g2.setStroke(new BasicStroke(1f));
                     }
-                    if (regionBox != null && cropMode) {
+                    // Thirds only make sense on a rectangle; the frame handles cover the rest.
+                    if (cropBox != null && mode == MODE_RECT) {
+                        paintThirds(g2, cropBox);
+                    }
+                    if (regionBox != null && cropMode()) {
                         g2.setColor(Theme.alpha(Theme.ACCENT_SOFT, 170));
                         g2.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND,
                                 BasicStroke.JOIN_ROUND, 1f, new float[]{6f, 5f}, 0f));
@@ -1247,14 +1305,15 @@ public class BackgroundRegionDialog extends JDialog {
                         g2.setStroke(new BasicStroke(1f));
                     }
 
-                    Rectangle2D.Float active = cropMode ? cropBox : regionBox;
+                    Rectangle2D.Float active = cropMode() ? cropBox : regionBox;
                     if (active != null) {
-                        g2.setColor(cropMode ? Color.WHITE : Theme.ACCENT_SOFT);
+                        g2.setColor(cropMode() ? Color.WHITE : Theme.ACCENT_SOFT);
                         g2.setStroke(new BasicStroke(2f));
                         g2.draw(active);
                         g2.setStroke(new BasicStroke(1f));
-                        paintHandles(g2, active, cropMode);
+                        paintHandles(g2, active, cropMode());
                     }
+                    paintTrace(g2);
                 }
 
                 g2.setColor(Theme.alpha(Theme.BORDER, 200));
@@ -1325,8 +1384,9 @@ public class BackgroundRegionDialog extends JDialog {
         /**
          * Rule-of-thirds guides inside a box.
          *
-         * <p>Only the crop gets them: choosing what to keep is a composition decision, while the
-         * balance box is placed against the picture's content, where a grid would just be noise.
+         * <p>Only the rectangular crop gets them: choosing what to keep is a composition decision,
+         * while the balance box is placed against the picture's content, where a grid would just be
+         * noise — and an irregular outline has no thirds to speak of.
          */
         private void paintThirds(Graphics2D g2, Rectangle2D.Float box) {
             g2.setColor(Theme.alpha(Color.WHITE, 60));
@@ -1337,6 +1397,28 @@ public class BackgroundRegionDialog extends JDialog {
                 g2.drawLine(x, (int) Math.round(box.y), x, (int) Math.round(box.y + box.height));
                 g2.drawLine((int) Math.round(box.x), y, (int) Math.round(box.x + box.width), y);
             }
+        }
+
+        /** The freehand outline being drawn right now, so the user can see what they are tracing. */
+        private void paintTrace(Graphics2D g2) {
+            if (trace.size() < 2) {
+                return;
+            }
+            Path2D.Float path = new Path2D.Float();
+            path.moveTo(trace.get(0).x, trace.get(0).y);
+            for (int i = 1; i < trace.size(); i++) {
+                path.lineTo(trace.get(i).x, trace.get(i).y);
+            }
+            g2.setColor(Theme.alpha(Theme.ACCENT_SOFT, 220));
+            g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.draw(path);
+            // A hint of the closing edge, since that is what the trace will become.
+            g2.setColor(Theme.alpha(Theme.ACCENT_SOFT, 90));
+            g2.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
+                    1f, new float[]{5f, 5f}, 0f));
+            g2.drawLine(trace.get(trace.size() - 1).x, trace.get(trace.size() - 1).y,
+                    trace.get(0).x, trace.get(0).y);
+            g2.setStroke(new BasicStroke(1f));
         }
 
         // -------------------------------------------------------------- input
@@ -1353,7 +1435,10 @@ public class BackgroundRegionDialog extends JDialog {
 
                 @Override
                 public void mouseReleased(MouseEvent e) {
-                    mode = NONE;
+                    if (dragMode == TRACE) {
+                        endTrace();
+                    }
+                    dragMode = NONE;
                     handle = -1;
                 }
             });
@@ -1412,9 +1497,18 @@ public class BackgroundRegionDialog extends JDialog {
             if (cover.width <= 0 || cover.height <= 0) {
                 return;
             }
+            float dx = dxPx / (float) cover.width;
+            float dy = dyPx / (float) cover.height;
+            if (cropMode() && mode == MODE_FREE) {
+                // Move the whole silhouette rather than its frame.
+                float clampedX = clamp(dx, -box.x, 1f - box.x - box.width);
+                float clampedY = clamp(dy, -box.y, 1f - box.y - box.height);
+                setCrop(crop.translated(clampedX, clampedY));
+                return;
+            }
             applyActiveBox(new Rectangle2D.Float(
-                    clamp(box.x + dxPx / (float) cover.width, 0f, 1f - box.width),
-                    clamp(box.y + dyPx / (float) cover.height, 0f, 1f - box.height),
+                    clamp(box.x + dx, 0f, 1f - box.width),
+                    clamp(box.y + dy, 0f, 1f - box.height),
                     box.width, box.height));
         }
 
@@ -1425,28 +1519,50 @@ public class BackgroundRegionDialog extends JDialog {
                 chooseImage();
                 return;
             }
-            Rectangle2D.Float box = activeBox();
-            dragStart = p;
-            dragStartBox = box == null ? null
-                    : new Rectangle2D.Float(box.x, box.y, box.width, box.height);
-
+            trace.clear();
             handle = handleAt(p);
             if (handle >= 0) {
-                mode = RESIZE;
+                dragStart = p;
+                dragStartBox = new Rectangle2D.Float(
+                        activeBox().x, activeBox().y, activeBox().width, activeBox().height);
+                dragMode = RESIZE;
                 return;
             }
             Rectangle2D.Float onCanvas = activeRectOnCanvas();
-            if (onCanvas != null && onCanvas.contains(p)) {
-                mode = MOVE;
+            // In freehand mode a plain rectangular crop is there to be replaced, not dragged: a
+            // fresh crop covers the whole picture, so "press inside" would otherwise swallow every
+            // attempt to start drawing. Once an outline exists, dragging inside it moves it.
+            boolean movable = mode == MODE_FREE ? !crop.isRectangle() : true;
+            if (movable && onCanvas != null && onCanvas.contains(p)) {
+                dragStart = p;
+                dragStartBox = new Rectangle2D.Float(
+                        activeBox().x, activeBox().y, activeBox().width, activeBox().height);
+                dragMode = MOVE;
                 return;
             }
-            mode = CREATE;
+            if (mode == MODE_FREE) {
+                // Outside the current outline: draw a new one. Collecting raw pointer samples here
+                // and simplifying on release keeps the trace smooth while it is being drawn.
+                dragMode = TRACE;
+                trace.add(p);
+                return;
+            }
+            dragStart = p;
             dragStartBox = null;
+            dragMode = CREATE;
             applyActiveBox(new Rectangle2D.Float(0, 0, 0.01f, 0.01f));
         }
 
         private void drag(Point p) {
-            if (image == null || mode == NONE) {
+            if (image == null || dragMode == NONE) {
+                return;
+            }
+            if (dragMode == TRACE) {
+                Point last = trace.isEmpty() ? null : trace.get(trace.size() - 1);
+                if (last == null || Math.abs(last.x - p.x) + Math.abs(last.y - p.y) >= 3) {
+                    trace.add(p);
+                    repaint();
+                }
                 return;
             }
             Rectangle cover = imageRect();
@@ -1454,7 +1570,7 @@ public class BackgroundRegionDialog extends JDialog {
                 return;
             }
             // The crop may not become a sliver; the balance box has its own smaller floor.
-            float floor = cropMode ? MIN_CROP_PX : MIN_REGION_PX;
+            float floor = cropMode() ? MIN_CROP_PX : MIN_REGION_PX;
             float minW = Math.min(1f, floor / (float) cover.width);
             float minH = Math.min(1f, floor / (float) cover.height);
             // Screen coordinates back to 0..1 of the image. The inverse of this open-coded
@@ -1466,7 +1582,7 @@ public class BackgroundRegionDialog extends JDialog {
             float sy = clamp((dragStart.y - cover.y) / (float) cover.height, 0f, 1f);
 
             Rectangle2D.Float next;
-            switch (mode) {
+            switch (dragMode) {
                 case CREATE:
                     next = fromEdges(Math.min(nx, sx), Math.min(ny, sy),
                             Math.max(nx, sx), Math.max(ny, sy), minW, minH);
@@ -1509,6 +1625,40 @@ public class BackgroundRegionDialog extends JDialog {
             applyActiveBox(next);
         }
 
+        /** Turns the finished freehand trace into the crop outline. */
+        private void endTrace() {
+            if (dragMode != TRACE || trace.size() < 4) {
+                trace.clear();
+                return;
+            }
+            Rectangle cover = imageRect();
+            if (cover.width <= 0 || cover.height <= 0) {
+                trace.clear();
+                return;
+            }
+            List<Point2D.Float> normalised = new ArrayList<Point2D.Float>(trace.size());
+            for (Point p : trace) {
+                normalised.add(new Point2D.Float(
+                        (p.x - cover.x) / (float) cover.width,
+                        (p.y - cover.y) / (float) cover.height));
+            }
+            trace.clear();
+            CropShape traced = CropShape.fromTrace(normalised, TRACE_TOLERANCE);
+            if (traced == null) {
+                setStatus("\u62d6\u62fd\u753b\u4e00\u5708\u624d\u80fd\u88c1\u51fa\u8f6e\u5ed3\uff08\u592a\u5c0f\u4e86\uff09", true);
+                repaint();
+                return;
+            }
+            Rectangle2D.Float bounds = traced.bounds();
+            if (bounds.width < AppConfig.MIN_CROP || bounds.height < AppConfig.MIN_CROP) {
+                setStatus("\u88c1\u526a\u8303\u56f4\u592a\u5c0f\uff0c\u8bf7\u91cd\u65b0\u62d6\u62fd", true);
+                repaint();
+                return;
+            }
+            setCrop(traced);
+            setStatus("\u5df2\u88c1\u51fa " + traced.size() + " \u4e2a\u9876\u70b9\u7684\u8f6e\u5ed3\uff0c\u53ef\u62d6\u6846\u5185\u79fb\u52a8\u3001\u62d6\u65b9\u5757\u7f29\u653e", false);
+        }
+
         /** Builds a region from two edges, ordering them and honouring the minimum size. */
         private Rectangle2D.Float fromEdges(float left, float top, float right, float bottom,
                                             float minW, float minH) {
@@ -1539,7 +1689,7 @@ public class BackgroundRegionDialog extends JDialog {
 
         /** The box the current mode edits, in canvas coordinates. */
         private Rectangle2D.Float activeRectOnCanvas() {
-            return cropMode ? cropRect() : regionRect();
+            return cropMode() ? cropRect() : regionRect();
         }
 
         private void hover(Point p) {

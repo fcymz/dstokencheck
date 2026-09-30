@@ -9,6 +9,7 @@ import com.sun.jna.platform.win32.User32;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser;
 import com.ruoyi.dstokencheck.model.BalanceSnapshot;
+import com.ruoyi.dstokencheck.model.CropShape;
 import com.ruoyi.dstokencheck.model.Wallet;
 import com.ruoyi.dstokencheck.net.DeepSeekClient;
 
@@ -105,6 +106,16 @@ public class BalanceBoard extends JFrame {
     private static final int NORTH = 4;
     private static final int SOUTH = 8;
 
+    /**
+     * Smallest card that may show a picture.
+     *
+     * <p>The label-driven minimum is about fitting the title, the big number and the footer; with a
+     * background the card's proportions are the picture's, and a wide crop would otherwise be
+     * squashed into 240×130 — pulling the window's edges off the crop again.
+     */
+    private static final int MIN_PICTURE_W = 160;
+    private static final int MIN_PICTURE_H = 80;
+
     /** Callbacks the widget uses to hand control back to the application. */
     public interface AuthEvents {
         /** The stored key was rejected; the app should ask for a new one. */
@@ -129,6 +140,8 @@ public class BalanceBoard extends JFrame {
     private final JPanel centerPanel = new JPanel();
     /** Account + status, pinned to the bottom in both modes. */
     private final JPanel footerPanel = new JPanel();
+    /** Title and window buttons; hidden for an irregular outline (see updateChromeVisibility). */
+    private final JPanel titleBarPanel = new JPanel();
     private final IconButton pinButton = new IconButton(IconButton.Glyph.PIN, "\u7f6e\u9876\u5f00\u5173");
     private final IconButton refreshButton = new IconButton(IconButton.Glyph.REFRESH, "\u7acb\u5373\u5237\u65b0");
     private final IconButton closeButton = new IconButton(IconButton.Glyph.CLOSE, "\u9690\u85cf\u7a97\u53e3");
@@ -137,6 +150,8 @@ public class BalanceBoard extends JFrame {
     private BufferedImage backgroundImage;
     /** The visible part of that image (normalised), or null for all of it. */
     private Rectangle2D.Float imageCrop;
+    /** The crop's silhouette; a rectangle unless the user traced an irregular one. */
+    private CropShape cropShape;
     /** Normalised box on that image where the balance is drawn. */
     private Rectangle2D.Float balanceRegion;
     /** Compact "CNY ≈ 12.4M tokens · 含赠送 …" line shown inside the framed box. */
@@ -187,10 +202,9 @@ public class BalanceBoard extends JFrame {
             }
         });
 
-        setMinimumSize(minimumBoardSize());
+        setMinimumSize(new Dimension(minW(), minH()));
         Rectangle saved = config.getBounds();
-        setSize(Math.max(minimumBoardSize().width, saved.width),
-                Math.max(minimumBoardSize().height, saved.height));
+        setSize(Math.max(minW(), saved.width), Math.max(minH(), saved.height));
         if (config.hasSavedPosition() && isOnScreen(saved)) {
             setLocation(saved.x, saved.y);
         } else {
@@ -250,7 +264,8 @@ public class BalanceBoard extends JFrame {
         board.setOpaque(false);
 
         // ---- title bar (also the drag handle) ----
-        JPanel titleBar = new JPanel(new BorderLayout());
+        JPanel titleBar = titleBarPanel;
+        titleBar.setLayout(new BorderLayout());
         titleBar.setOpaque(false);
         titleLabel.setFont(Theme.ui(Font.PLAIN, 11.5f));
         titleLabel.setForeground(Theme.TEXT_DIM);
@@ -349,11 +364,11 @@ public class BalanceBoard extends JFrame {
     }
 
     private int minW() {
-        return minimumBoardSize().width;
+        return backgroundImage != null ? MIN_PICTURE_W : minimumBoardSize().width;
     }
 
     private int minH() {
-        return minimumBoardSize().height;
+        return backgroundImage != null ? MIN_PICTURE_H : minimumBoardSize().height;
     }
 
     /**
@@ -371,7 +386,7 @@ public class BalanceBoard extends JFrame {
 
         Rectangle b = getBounds();
         float ratio = now / old;
-        setMinimumSize(minimumBoardSize());
+        setMinimumSize(new Dimension(minW(), minH()));
         setBounds(b.x, b.y,
                 Math.max(minW(), Math.round(b.width * ratio)),
                 Math.max(minH(), Math.round(b.height * ratio)));
@@ -710,14 +725,18 @@ public class BalanceBoard extends JFrame {
     }
 
     /**
-     * Clips the window to a rounded rectangle.
+     * Clips the window to the card's outline.
+     *
+     * <p>Without a crop that is a rounded rectangle. With an irregular one it has to be the crop's
+     * own silhouette: the window's edge is the edge the user drew, so a lassoed subject becomes a
+     * window in that shape rather than a rectangle with the background still around it.
      *
      * <p>Deliberately <em>not</em> done with per-pixel translucency
      * ({@code setBackground(new Color(0,0,0,0))}). On Windows a per-pixel translucent window
      * forces Java2D down a path where LCD text antialiasing emits glyphs with alpha 0: every label
      * paints successfully but ends up completely transparent, so the window shows its gradient and
      * any vector-drawn icons while all text silently vanishes. An opaque window clipped by
-     * {@code setShape} gives the same rounded look with normal text.
+     * {@code setShape} gives the same shaped look with normal text.
      *
      * @return true when the shape was applied
      */
@@ -726,12 +745,29 @@ public class BalanceBoard extends JFrame {
             return false;
         }
         try {
-            setShape(new RoundRectangle2D.Double(0, 0, getWidth(), getHeight(), ARC, ARC));
+            setShape(windowOutline());
             return true;
         } catch (Exception e) {
             // Not supported here; fall back to square corners rather than showing nothing.
             return false;
         }
+    }
+
+    /**
+     * The window's outline in its own coordinates: the crop's silhouette, or the rounded card.
+     *
+     * <p>A rectangular crop keeps the app's rounded corners — that is the look every other window
+     * has — while an irregular crop is used exactly as drawn.
+     */
+    private java.awt.Shape windowOutline() {
+        if (cropShape != null && !cropShape.isRectangle() && backgroundImage != null) {
+            // Same transform as the painting: the outline is normalised to the picture, so it has
+            // to travel through wherever the picture is drawn on the card.
+            Rectangle image = BackgroundLayout.imageRect(imageCrop,
+                    backgroundImage.getWidth(), backgroundImage.getHeight(), getWidth(), getHeight());
+            return cropShape.toPath(image);
+        }
+        return new RoundRectangle2D.Double(0, 0, getWidth(), getHeight(), ARC, ARC);
     }
 
     // -------------------------------------------------------------- lifecycle
@@ -1070,12 +1106,9 @@ public class BalanceBoard extends JFrame {
             }
         }
         if (w < minW() || h < minH()) {
-            w = Math.max(minW(), (int) Math.round(minH() * aspect));
-            h = (int) Math.round(w / aspect);
-            if (h < minH()) {
-                h = minH();
-                w = (int) Math.round(h * aspect);
-            }
+            Rectangle floored = aspectLockedSize(aspect, w, h, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            w = floored.width;
+            h = floored.height;
         }
 
         int x = wanted.x;
@@ -1098,29 +1131,14 @@ public class BalanceBoard extends JFrame {
      * otherwise the size presets would break the alignment that cropping exists to guarantee.
      */
     private void applySize(int wantedW, int wantedH) {
-        int w = Math.max(1, wantedW);
-        int h = Math.max(1, wantedH);
         if (backgroundImage != null) {
-            double aspect = backgroundAspect();
-            // Honour the larger of the two requests, so the card is never smaller than asked for.
-            if (w / aspect >= h) {
-                h = (int) Math.round(w / aspect);
-            } else {
-                w = (int) Math.round(h * aspect);
-            }
-            if (w < minW()) {
-                w = minW();
-                h = (int) Math.round(w / aspect);
-            }
-            if (h < minH()) {
-                h = minH();
-                w = (int) Math.round(h * aspect);
-            }
-        } else {
-            w = Math.max(minW(), w);
-            h = Math.max(minH(), h);
+            Rectangle screen = usableScreenBounds();
+            Rectangle size = aspectLockedSize(backgroundAspect(), wantedW, wantedH,
+                    Math.max(minW(), screen.width), Math.max(minH(), screen.height));
+            setSize(size.width, size.height);
+            return;
         }
-        setSize(w, h);
+        setSize(Math.max(minW(), Math.max(1, wantedW)), Math.max(minH(), Math.max(1, wantedH)));
     }
 
     private void endGesture() {
@@ -1225,18 +1243,35 @@ public class BalanceBoard extends JFrame {
         }
         backgroundImage = image;
         imageCrop = image == null ? null : config.getImageCrop();
+        cropShape = image == null ? null : config.getEffectiveCropShape();
         balanceRegion = image == null ? null : config.getBalanceRegion();
         if (image != null && balanceRegion == null) {
             balanceRegion = AppConfig.defaultBalanceRegion();
         }
 
-        board.setBackgroundImage(image, imageCrop, balanceRegion);
+        board.setBackgroundImage(image, imageCrop, cropShape, balanceRegion);
         board.setRegionText(amountLabel.getText(), regionSubtitle, config.getBalanceTextColor());
         // The image fills the whole card, so the label column would only cover it; the figure moves
         // into the framed box instead.
         centerPanel.setVisible(image == null);
+        updateChromeVisibility();
         board.revalidate();
         board.repaint();
+    }
+
+    /**
+     * Shows or hides the title bar and footer.
+     *
+     * <p>With an irregular crop the window is the picture's silhouette, and the chrome would be
+     * drawn at the corners of the bounding box — outside the outline, so the buttons could not even
+     * be clicked. An outline window therefore shows only the picture and the number, and everything
+     * else lives in the right-click menu.
+     */
+    private void updateChromeVisibility() {
+        boolean irregular = cropShape != null && !cropShape.isRectangle();
+        titleBarPanel.setVisible(!irregular);
+        footerPanel.setVisible(!irregular);
+        board.setChromeVisible(!irregular);
     }
 
     /** Opens the image picker / region framer, and applies the result when it is confirmed. */
@@ -1275,10 +1310,51 @@ public class BalanceBoard extends JFrame {
             return;
         }
         Rectangle screen = usableScreenBounds();
-        int ceiling = Math.max(minH(), Math.round(screen.height * 0.85f));
-        int w = Math.max(minW(), getWidth());
-        int h = Math.max(minH(), Math.min((int) Math.round(w / backgroundAspect()), ceiling));
-        setSize(w, h);
+        Rectangle size = aspectLockedSize(backgroundAspect(), Math.max(minW(), getWidth()), 1,
+                Math.max(minW(), (int) (screen.width * 0.9f)),
+                Math.max(minH(), (int) (screen.height * 0.85f)));
+        setSize(size.width, size.height);
+    }
+
+    /**
+     * The card's size at a fixed aspect ratio, aiming for {@code wantedW x wantedH}.
+     *
+     * <p>Floor and ceiling are applied to whichever axis binds and the other is derived, so the
+     * proportions survive both — a 4:1 crop must not be pushed into a 2:1 window just because a
+     * window is not allowed to be short.
+     */
+    private Rectangle aspectLockedSize(double aspect, int wantedW, int wantedH,
+                                       int ceilingW, int ceilingH) {
+        int w = Math.max(1, wantedW);
+        int h = Math.max(1, wantedH);
+        if (w / aspect >= h) {
+            h = (int) Math.round(w / aspect);
+        } else {
+            w = (int) Math.round(h * aspect);
+        }
+        if (w < minW()) {
+            w = minW();
+            h = (int) Math.round(w / aspect);
+        }
+        if (h < minH()) {
+            h = minH();
+            w = (int) Math.round(h * aspect);
+        }
+        if (w > ceilingW) {
+            w = ceilingW;
+            h = (int) Math.round(w / aspect);
+        }
+        if (h > ceilingH) {
+            h = ceilingH;
+            w = (int) Math.round(h * aspect);
+        }
+        // A ceiling can push the other axis back under the floor on a small screen; the floor wins,
+        // since a card too small to read is worse than one that is a little too large.
+        if (w < minW()) {
+            w = minW();
+            h = (int) Math.round(w / aspect);
+        }
+        return new Rectangle(0, 0, Math.max(1, w), Math.max(1, h));
     }
 
     /** Width-to-height ratio of the part of the picture the window shows. */
@@ -1304,19 +1380,30 @@ public class BalanceBoard extends JFrame {
         private BufferedImage backgroundImage;
         /** Visible part of that image (normalised), or null for all of it. */
         private Rectangle2D.Float imageCrop;
+        /** The crop's silhouette; a rectangle unless the user traced an irregular one. */
+        private CropShape cropShape;
         /** Normalised 0..1 box on the image where the balance goes; null when not framed yet. */
         private Rectangle2D.Float region;
         private String regionText = "";
         private String regionSubtitle = "";
         private Color regionTextColor = Color.WHITE;
+        /** False when the title bar and footer are hidden, which also drops the edge scrims. */
+        private boolean chromeVisible = true;
+
+        void setChromeVisible(boolean visible) {
+            this.chromeVisible = visible;
+            repaint();
+        }
 
         void setRounded(boolean rounded) {
             this.rounded = rounded;
         }
 
-        void setBackgroundImage(BufferedImage image, Rectangle2D.Float crop, Rectangle2D.Float region) {
+        void setBackgroundImage(BufferedImage image, Rectangle2D.Float crop,
+                                CropShape shape, Rectangle2D.Float region) {
             this.backgroundImage = image;
             this.imageCrop = crop;
+            this.cropShape = shape;
             this.region = region;
             repaint();
         }
@@ -1392,10 +1479,11 @@ public class BalanceBoard extends JFrame {
                 int h = getHeight();
                 int arc = rounded ? 16 : 0;
 
-                java.awt.Shape clip = rounded
-                        ? new RoundRectangle2D.Float(0, 0, w - 1, h - 1, arc, arc)
-                        : new Rectangle(0, 0, w, h);
-                g2.setClip(clip);
+                java.awt.Shape clip = cardOutline(w, h, arc);
+                java.awt.Shape old = g2.getClip();
+                // Clipped here as well as on the window: offscreen renders (--shot, the self test)
+                // do not go through the window region, and they must look the same as the desktop.
+                g2.clip(clip);
                 if (backgroundImage != null) {
                     Rectangle img = imageBounds();
                     // Smooth scaling, matching the editor's preview: a photo is usually many times
@@ -1403,24 +1491,35 @@ public class BalanceBoard extends JFrame {
                     g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                             RenderingHints.VALUE_INTERPOLATION_BILINEAR);
                     g2.drawImage(backgroundImage, img.x, img.y, img.width, img.height, null);
-                    // Keeps the title bar and footer readable over a bright photo.
-                    Theme.paintEdgeScrim(g2, w, h);
+                    // Keeps the title bar and footer readable over a bright photo. Nothing to keep
+                    // readable when they are hidden, and the scrim would only dull the picture.
+                    if (chromeVisible) {
+                        Theme.paintEdgeScrim(g2, w, h);
+                    }
                 } else {
                     g2.setPaint(new GradientPaint(0, 0, Theme.BG_TOP, 0, h, Theme.BG_BOTTOM));
                     g2.fillRect(0, 0, w, h);
                 }
-                g2.setClip(null);
+                g2.setClip(old);
 
-                if (rounded) {
-                    g2.setColor(Theme.alpha(Theme.ACCENT, 90));
-                } else {
-                    g2.setColor(Theme.BORDER);
-                }
+                g2.setColor(Theme.alpha(Theme.ACCENT, 90));
                 g2.setStroke(new BasicStroke(1f));
                 g2.draw(clip);
             } finally {
                 g2.dispose();
             }
+        }
+
+        /** The card's silhouette: the crop's outline when it is irregular, else the rounded card. */
+        private java.awt.Shape cardOutline(int w, int h, int arc) {
+            if (cropShape != null && !cropShape.isRectangle()) {
+                // Through the image transform, not stretched to the card: the outline is stored
+                // relative to the whole picture, exactly like the balance region is.
+                return cropShape.toPath(imageBounds());
+            }
+            return rounded
+                    ? new RoundRectangle2D.Float(0, 0, w - 1, h - 1, arc, arc)
+                    : new Rectangle(0, 0, w, h);
         }
     }
 }

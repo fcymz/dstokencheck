@@ -1,5 +1,7 @@
 package com.ruoyi.dstokencheck.config;
 
+import com.ruoyi.dstokencheck.model.CropShape;
+
 import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Rectangle;
@@ -63,6 +65,14 @@ public class AppConfig {
     private Rectangle2D.Float imageCrop;
 
     /**
+     * The outline of the crop when it is not a plain rectangle, or null.
+     *
+     * <p>{@link #imageCrop} stays the bounding box — it is what the window's proportions come from —
+     * and this holds the actual silhouette inside it.
+     */
+    private CropShape cropShape;
+
+    /**
      * Colour of the balance figure in custom-background mode. Matches {@code Theme.TEXT} by default;
      * the value is repeated here rather than imported so the settings layer stays free of UI types.
      */
@@ -112,6 +122,12 @@ public class AppConfig {
         backgroundImageName = props.getProperty("backgroundImage", "").trim();
         balanceRegion = parseRegion(props.getProperty("balanceRegion"));
         imageCrop = parseRegion(props.getProperty("imageCrop"));
+        cropShape = CropShape.parse(props.getProperty("imageCropShape"));
+        if (cropShape != null) {
+            // Trust the outline over the box: the two are written together, and the outline is the
+            // one the user actually drew.
+            imageCrop = cropShape.bounds();
+        }
         balanceTextColor = parseColor(props.getProperty("balanceTextColor"), balanceTextColor);
     }
 
@@ -139,6 +155,11 @@ public class AppConfig {
             props.remove("imageCrop");
         } else {
             props.setProperty("imageCrop", formatRegion(imageCrop));
+        }
+        if (cropShape == null || cropShape.isRectangle()) {
+            props.remove("imageCropShape");
+        } else {
+            props.setProperty("imageCropShape", cropShape.serialize());
         }
         props.setProperty("balanceTextColor", formatColor(balanceTextColor));
 
@@ -331,6 +352,7 @@ public class AppConfig {
         backgroundImageName = "";
         balanceRegion = null;
         imageCrop = null;
+        cropShape = null;
         pruneBackgroundImages(null);
         save();
     }
@@ -394,10 +416,47 @@ public class AppConfig {
         return imageCrop != null;
     }
 
+    /** True when the crop is not a plain rectangle, so the window has to be shaped to it. */
+    public boolean hasIrregularCrop() {
+        return cropShape != null && !cropShape.isRectangle();
+    }
+
+    /**
+     * The outline the widget should show, never null: the crop's silhouette, or the bounding box as
+     * a rectangle when the crop is a plain box (or nothing is cropped at all).
+     */
+    public CropShape getEffectiveCropShape() {
+        if (cropShape != null) {
+            return cropShape;
+        }
+        return CropShape.rectangle(getEffectiveCrop());
+    }
+
+    /**
+     * Stores an outline. The bounding box is derived from it, since that is what decides the
+     * window's proportions and where the picture sits; a rectangular outline is stored as a plain
+     * crop and the outline itself is dropped.
+     */
+    public void setCropShape(CropShape shape) {
+        if (shape == null) {
+            cropShape = null;
+            setImageCrop(null);
+            return;
+        }
+        Rectangle2D.Float bounds = shape.bounds();
+        if (bounds.width < MIN_CROP || bounds.height < MIN_CROP) {
+            return;
+        }
+        setImageCrop(bounds);
+        cropShape = shape.isRectangle() ? null : shape;
+    }
+
     /** Stores a normalised crop; a full-frame one is dropped, and small ones are clamped away. */
     public void setImageCrop(Rectangle2D.Float crop) {
         if (crop == null || isFullFrame(crop)) {
             imageCrop = null;
+            // A silhouette of the whole picture is the same as no crop at all.
+            cropShape = null;
             return;
         }
         float w = clamp(crop.width, MIN_CROP, 1f);

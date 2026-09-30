@@ -105,16 +105,4 @@ public final class BackgroundLayout {
         }
         return new Rectangle2D.Float(x, y, x2 - x, y2 - y);
     }
-
-    /** True when {@code inner} lies completely inside {@code outer}. */
-    public static boolean contains(Rectangle2D.Float outer, Rectangle2D.Float inner) {
-        if (outer == null || inner == null) {
-            return false;
-        }
-        float eps = 0.002f;
-        return inner.x >= outer.x - eps
-                && inner.y >= outer.y - eps
-                && inner.x + inner.width <= outer.x + outer.width + eps
-                && inner.y + inner.height <= outer.y + outer.height + eps;
-    }
 }

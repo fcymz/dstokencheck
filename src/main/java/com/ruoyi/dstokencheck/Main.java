@@ -997,6 +997,18 @@ public final class Main {
             boolean leftIsGreen = green(left) > red(left) + 30 && green(left) > blue(left) + 30;
             boolean rightIsBlue = blue(right) > red(right) + 60 && blue(right) > green(right) + 60;
 
+            // The picture is the window, not something inside the app's card: its own corners are
+            // the window's corners (no rounding), and no frame is stroked over its edge.
+            java.awt.Shape windowShape = ref[0].getShape();
+            boolean squareCorners = windowShape != null
+                    && windowShape.contains(1.0, 1.0)
+                    && windowShape.contains(bounds.width - 2.0, bounds.height - 2.0);
+            int cornerTL = shot.getRGB(6, 6);
+            int cornerBR = shot.getRGB(bounds.width - 7, bounds.height - 7);
+            boolean cornersArePicture =
+                    green(cornerTL) > red(cornerTL) + 30 && green(cornerTL) > blue(cornerTL) + 30
+                    && blue(cornerBR) > red(cornerBR) + 60 && blue(cornerBR) > green(cornerBR) + 60;
+
             // Nothing of the cropped-away stripes may be visible anywhere on the card.
             boolean noRedOrYellow = true;
             for (int y = 0; y < bounds.height && noRedOrYellow; y += 7) {
@@ -1023,7 +1035,8 @@ public final class Main {
                 }
             });
 
-            boolean ok = aspectFitted && leftIsGreen && rightIsBlue && noRedOrYellow && aspectKept;
+            boolean ok = aspectFitted && leftIsGreen && rightIsBlue && noRedOrYellow && aspectKept
+                    && squareCorners && cornersArePicture;
             System.out.println((ok ? "PASS" : "FAIL")
                     + "  \u7a97\u53e3\u8fb9\u7f18\u4e0e\u88c1\u526a\u4e00\u81f4"
                     + " (\u7a97\u53e3=" + bounds.width + "x" + bounds.height
@@ -1032,7 +1045,9 @@ public final class Main {
                     + ", \u53f3\u8fb9\u7f18\u662f\u88c1\u526a\u53f3\u8fb9=" + rightIsBlue
                     + ", \u88ab\u88c1\u6389\u7684\u989c\u8272\u672a\u51fa\u73b0=" + noRedOrYellow
                     + ", \u7f29\u653e\u540e\u4fdd\u6301\u6bd4\u4f8b=" + aspectKept
-                    + " -> " + resized.width + "x" + resized.height + ")");
+                    + " -> " + resized.width + "x" + resized.height
+                    + ", \u56db\u89d2\u4e0d\u518d\u5706\u89d2=" + squareCorners
+                    + ", \u56db\u89d2\u5c31\u662f\u56fe\u7247=" + cornersArePicture + ")");
             return ok;
         } catch (Exception e) {
             System.out.println("FAIL  \u7a97\u53e3\u8fb9\u7f18\u4e0e\u88c1\u526a\u4e00\u81f4: " + e);

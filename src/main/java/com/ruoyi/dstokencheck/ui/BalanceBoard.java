@@ -43,6 +43,7 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -383,13 +384,18 @@ public class BalanceBoard extends JFrame {
             return;
         }
         config.save();
-
-        Rectangle b = getBounds();
-        float ratio = now / old;
         setMinimumSize(new Dimension(minW(), minH()));
-        setBounds(b.x, b.y,
-                Math.max(minW(), Math.round(b.width * ratio)),
-                Math.max(minH(), Math.round(b.height * ratio)));
+
+        // The scale drives every label; with a picture the labels are hidden and the figure is
+        // fitted to the framed box instead, so only the setting changes — resizing the card by the
+        // same ratio would pull its edges off the crop.
+        if (backgroundImage == null) {
+            Rectangle b = getBounds();
+            float ratio = now / old;
+            setBounds(b.x, b.y,
+                    Math.max(minW(), Math.round(b.width * ratio)),
+                    Math.max(minH(), Math.round(b.height * ratio)));
+        }
         applyFonts();
         applyShape();
 
@@ -725,11 +731,12 @@ public class BalanceBoard extends JFrame {
     }
 
     /**
-     * Clips the window to the card's outline.
+     * Clips the window to its outline.
      *
-     * <p>Without a crop that is a rounded rectangle. With an irregular one it has to be the crop's
-     * own silhouette: the window's edge is the edge the user drew, so a lassoed subject becomes a
-     * window in that shape rather than a rectangle with the background still around it.
+     * <p>Without a picture that is the app's rounded card. With one the window <em>is</em> the
+     * picture: the crop's rectangle with its own four corners, or the traced silhouette — no
+     * rounding and no frame, because cutting a corner off the picture or stroking a line around it
+     * would make it a picture inside a card again.
      *
      * <p>Deliberately <em>not</em> done with per-pixel translucency
      * ({@code setBackground(new Color(0,0,0,0))}). On Windows a per-pixel translucent window
@@ -754,18 +761,22 @@ public class BalanceBoard extends JFrame {
     }
 
     /**
-     * The window's outline in its own coordinates: the crop's silhouette, or the rounded card.
+     * The window's outline in its own coordinates.
      *
-     * <p>A rectangular crop keeps the app's rounded corners — that is the look every other window
-     * has — while an irregular crop is used exactly as drawn.
+     * <p>With a picture: the traced silhouette, or the crop's rectangle corner to corner. Without
+     * one: the rounded card every other window of this app uses.
      */
     private java.awt.Shape windowOutline() {
-        if (cropShape != null && !cropShape.isRectangle() && backgroundImage != null) {
-            // Same transform as the painting: the outline is normalised to the picture, so it has
-            // to travel through wherever the picture is drawn on the card.
-            Rectangle image = BackgroundLayout.imageRect(imageCrop,
-                    backgroundImage.getWidth(), backgroundImage.getHeight(), getWidth(), getHeight());
-            return cropShape.toPath(image);
+        if (backgroundImage != null) {
+            if (cropShape != null && !cropShape.isRectangle()) {
+                // Same transform as the painting: the outline is normalised to the picture, so it
+                // has to travel through wherever the picture is drawn on the card.
+                Rectangle image = BackgroundLayout.imageRect(imageCrop,
+                        backgroundImage.getWidth(), backgroundImage.getHeight(),
+                        getWidth(), getHeight());
+                return cropShape.toPath(image);
+            }
+            return new Rectangle(0, 0, getWidth(), getHeight());
         }
         return new RoundRectangle2D.Double(0, 0, getWidth(), getHeight(), ARC, ARC);
     }
@@ -895,6 +906,7 @@ public class BalanceBoard extends JFrame {
 
         statusLabel.setForeground(Theme.TEXT_DIM);
         statusLabel.setText("\u66f4\u65b0\u4e8e " + new SimpleDateFormat("HH:mm:ss").format(new Date(snap.getFetchedAtMillis())));
+        board.setErrorText("");
         board.repaint();
     }
 
@@ -908,6 +920,8 @@ public class BalanceBoard extends JFrame {
     private void showError(String message) {
         statusLabel.setForeground(Theme.DANGER);
         statusLabel.setText(truncate(message, 60));
+        // The footer may be hidden behind a picture, so the same message goes onto the picture.
+        board.setErrorText(truncate(message, 70));
     }
 
     /** True when the widget was started with {@code -Ddstokencheck.demo=true} to preview layout. */
@@ -1262,16 +1276,16 @@ public class BalanceBoard extends JFrame {
     /**
      * Shows or hides the title bar and footer.
      *
-     * <p>With an irregular crop the window is the picture's silhouette, and the chrome would be
-     * drawn at the corners of the bounding box — outside the outline, so the buttons could not even
-     * be clicked. An outline window therefore shows only the picture and the number, and everything
-     * else lives in the right-click menu.
+     * <p>Once a picture is set the window is the picture, so none of the app's own furniture is
+     * drawn over it: no title bar, no window buttons, no footer, and none of the edge shading that
+     * exists to keep that text readable. What is left is the picture and the balance figure, which
+     * is the point of choosing one. Everything else stays in the right-click menu.
      */
     private void updateChromeVisibility() {
-        boolean irregular = cropShape != null && !cropShape.isRectangle();
-        titleBarPanel.setVisible(!irregular);
-        footerPanel.setVisible(!irregular);
-        board.setChromeVisible(!irregular);
+        boolean picture = backgroundImage != null;
+        titleBarPanel.setVisible(!picture);
+        footerPanel.setVisible(!picture);
+        board.setChromeVisible(!picture);
     }
 
     /** Opens the image picker / region framer, and applies the result when it is confirmed. */
@@ -1389,9 +1403,16 @@ public class BalanceBoard extends JFrame {
         private Color regionTextColor = Color.WHITE;
         /** False when the title bar and footer are hidden, which also drops the edge scrims. */
         private boolean chromeVisible = true;
+        /** Last failed refresh, shown on the picture when there is no footer to show it in. */
+        private String errorText = "";
 
         void setChromeVisible(boolean visible) {
             this.chromeVisible = visible;
+            repaint();
+        }
+
+        void setErrorText(String text) {
+            this.errorText = text == null ? "" : text;
             repaint();
         }
 
@@ -1452,6 +1473,7 @@ public class BalanceBoard extends JFrame {
             // Drawn after the children: a wide frame can reach under the footer, and the number is
             // the one thing that must never end up hidden.
             paintRegionText(g);
+            paintErrorText(g);
         }
 
         private void paintRegionText(Graphics g) {
@@ -1468,6 +1490,48 @@ public class BalanceBoard extends JFrame {
             } finally {
                 g2.dispose();
             }
+        }
+
+        /**
+         * Reports a failed refresh on the picture itself.
+         *
+         * <p>A picture window has no footer to put a message in, and leaving the last good number on
+         * screen while the fetches fail would quietly lie about the balance. The chip only appears
+         * when something is actually wrong.
+         */
+        private void paintErrorText(Graphics g) {
+            if (chromeVisible || errorText.isEmpty()) {
+                return;
+            }
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setFont(Theme.ui(Font.PLAIN, 10.5f));
+                FontMetrics fm = g2.getFontMetrics();
+                String text = fitText(g2, errorText, Math.max(60, getWidth() - 28));
+                int w = fm.stringWidth(text) + 16;
+                int h = fm.getHeight() + 6;
+                int x = 8;
+                int y = Math.max(4, getHeight() - h - 8);
+                g2.setColor(new Color(0, 0, 0, 165));
+                g2.fill(new RoundRectangle2D.Float(x, y, w, h, 8, 8));
+                g2.setColor(Theme.DANGER);
+                g2.drawString(text, x + 8, y + 3 + fm.getAscent());
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        private static String fitText(Graphics2D g2, String text, int maxWidth) {
+            FontMetrics fm = g2.getFontMetrics();
+            if (fm.stringWidth(text) <= maxWidth) {
+                return text;
+            }
+            int end = text.length();
+            while (end > 1 && fm.stringWidth(text.substring(0, end) + "\u2026") > maxWidth) {
+                end--;
+            }
+            return text.substring(0, end) + "\u2026";
         }
 
         @Override
@@ -1502,9 +1566,13 @@ public class BalanceBoard extends JFrame {
                 }
                 g2.setClip(old);
 
-                g2.setColor(Theme.alpha(Theme.ACCENT, 90));
-                g2.setStroke(new BasicStroke(1f));
-                g2.draw(clip);
+                // A card draws its own edge; a picture's edge is the window's, and stroking it would
+                // put the frame back around a window that is supposed to be the picture.
+                if (backgroundImage == null) {
+                    g2.setColor(Theme.alpha(Theme.ACCENT, 90));
+                    g2.setStroke(new BasicStroke(1f));
+                    g2.draw(clip);
+                }
             } finally {
                 g2.dispose();
             }
@@ -1512,10 +1580,13 @@ public class BalanceBoard extends JFrame {
 
         /** The card's silhouette: the crop's outline when it is irregular, else the rounded card. */
         private java.awt.Shape cardOutline(int w, int h, int arc) {
-            if (cropShape != null && !cropShape.isRectangle()) {
-                // Through the image transform, not stretched to the card: the outline is stored
-                // relative to the whole picture, exactly like the balance region is.
-                return cropShape.toPath(imageBounds());
+            if (backgroundImage != null) {
+                if (cropShape != null && !cropShape.isRectangle()) {
+                    // Through the image transform, not stretched to the card: the outline is stored
+                    // relative to the whole picture, exactly like the balance region is.
+                    return cropShape.toPath(imageBounds());
+                }
+                return new Rectangle(0, 0, w, h);
             }
             return rounded
                     ? new RoundRectangle2D.Float(0, 0, w - 1, h - 1, arc, arc)

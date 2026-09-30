@@ -935,10 +935,12 @@ public class BackgroundRegionDialog extends JDialog {
                 int y = (getHeight() - h) / 2;
 
                 // The miniature has to be cut to the same silhouette as the window, or it would
-                // promise a rectangular card the user is not going to get.
-                Shape cardShape = shape.isRectangle()
-                        ? new RoundRectangle2D.Float(x, y, w - 1, h - 1, 14, 14)
-                        : shape.toPath(new Rectangle(x, y, w, h));
+                // promise a rectangular card the user is not going to get. With a picture the card
+                // is the picture itself, sharp corners and all.
+                boolean picture = image != null;
+                Shape cardShape = picture
+                        ? shape.toPath(new Rectangle(x, y, w, h))
+                        : new RoundRectangle2D.Float(x, y, w - 1, h - 1, 14, 14);
                 Shape old = g2.getClip();
                 g2.clip(cardShape);
                 g2.translate(x, y);
@@ -949,13 +951,12 @@ public class BackgroundRegionDialog extends JDialog {
                     g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                             RenderingHints.VALUE_INTERPOLATION_BILINEAR);
                     g2.drawImage(canvas.displayImage(), cover.x, cover.y, cover.width, cover.height, null);
-                    Theme.paintEdgeScrim(g2, w, h);
                 } else {
                     g2.setPaint(new GradientPaint(0, 0, Theme.BG_TOP, 0, h, Theme.BG_BOTTOM));
                     g2.fillRect(0, 0, w, h);
+                    // The widget only draws its own title bar and footer on the plain card.
+                    paintChrome(g2, w, h);
                 }
-
-                paintChrome(g2, w, h);
 
                 Rectangle2D.Float region = canvas.getRegion();
                 if (image != null && region != null) {
@@ -969,8 +970,11 @@ public class BackgroundRegionDialog extends JDialog {
                 g2.translate(-x, -y);
                 g2.setClip(old);
 
-                g2.setColor(Theme.alpha(Theme.ACCENT, 110));
-                g2.draw(cardShape);
+                // Only the card has an edge drawn round it; the picture's edge is the window's.
+                if (!picture) {
+                    g2.setColor(Theme.alpha(Theme.ACCENT, 110));
+                    g2.draw(cardShape);
+                }
             } finally {
                 g2.dispose();
             }

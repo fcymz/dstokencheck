@@ -476,17 +476,26 @@ public class BalanceBoard extends JFrame {
 
         menu.add(new JSeparator());
 
-        JMenu presetMenu = new JMenu("\u9884\u8bbe\u914d\u7f6e");
-        List<Preset> presets = Preset.bundled();
-        for (final Preset preset : presets) {
-            JMenuItem item = new JMenuItem(preset.getName());
-            item.setToolTipText(preset.getDescription().isEmpty()
-                    ? "\u4e00\u952e\u5957\u7528\u8fd9\u5957\u5916\u89c2"
-                    : preset.getDescription());
-            item.addActionListener(e -> applyPreset(preset));
-            presetMenu.add(item);
-        }
-        presetMenu.setEnabled(!presets.isEmpty());
+        final JMenu presetMenu = new JMenu("\u9884\u8bbe\u914d\u7f6e");
+        // Rebuilt whenever it opens: a preset can be saved while the app is running, and the menu
+        // has to offer it without a restart.
+        presetMenu.getPopupMenu().addPopupMenuListener(new PopupMenuListener() {
+            @Override
+            public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+                rebuildPresetMenu(presetMenu);
+            }
+
+            @Override
+            public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+                // nothing to do
+            }
+
+            @Override
+            public void popupMenuCanceled(PopupMenuEvent e) {
+                // nothing to do
+            }
+        });
+        rebuildPresetMenu(presetMenu);
         menu.add(presetMenu);
 
         menu.add(new JSeparator());
@@ -1397,8 +1406,173 @@ public class BalanceBoard extends JFrame {
     }
 
     /**
-     * Switches the widget to a bundled look in one go: picture, crop, framed box, colour, font
-     * scale, card size and the rest of it. Used by the 预设配置 menu and by {@code --preset}.
+     * Fills the 预设配置 submenu: saving first, then what the user has saved, then what shipped.
+     */
+    private void rebuildPresetMenu(JMenu presetMenu) {
+        presetMenu.removeAll();
+
+        JMenuItem save = new JMenuItem("\u4fdd\u5b58\u5f53\u524d\u914d\u7f6e\u4e3a\u9884\u8bbe\u2026");
+        save.setToolTipText("\u628a\u73b0\u5728\u7684\u80cc\u666f\u56fe\u3001\u88c1\u526a\u3001\u989c\u8272\u4e0e\u5b57\u53f7\u5b58\u6210\u4e00\u4e2a\u9884\u8bbe");
+        save.addActionListener(e -> saveCurrentAsPreset());
+        presetMenu.add(save);
+
+        List<Preset> mine = Preset.userPresets();
+        if (!mine.isEmpty()) {
+            presetMenu.add(new JSeparator());
+            for (final Preset preset : mine) {
+                JMenuItem item = new JMenuItem(preset.getName());
+                item.setToolTipText("\u4e00\u952e\u5957\u7528\uff08\u81ea\u5df1\u4fdd\u5b58\u7684\uff09");
+                item.addActionListener(e -> applyPreset(preset));
+                presetMenu.add(item);
+            }
+        }
+
+        List<Preset> bundled = Preset.bundled();
+        if (!bundled.isEmpty()) {
+            presetMenu.add(new JSeparator());
+            for (final Preset preset : bundled) {
+                JMenuItem item = new JMenuItem(preset.getName());
+                item.setToolTipText(preset.getDescription().isEmpty()
+                        ? "\u4e00\u952e\u5957\u7528\uff08\u5185\u7f6e\uff09"
+                        : preset.getDescription());
+                item.addActionListener(e -> applyPreset(preset));
+                presetMenu.add(item);
+            }
+        }
+
+        presetMenu.add(new JSeparator());
+        JMenuItem deleteItem = new JMenuItem("\u5220\u9664\u9884\u8bbe\u2026");
+        deleteItem.setToolTipText("\u5220\u9664\u81ea\u5df1\u4fdd\u5b58\u7684\u9884\u8bbe\uff08\u5185\u7f6e\u9884\u8bbe\u4e0d\u53ef\u5220\u9664\uff09");
+        deleteItem.addActionListener(e -> deletePresetFlow());
+        presetMenu.add(deleteItem);
+
+        JMenuItem openFolder = new JMenuItem("\u6253\u5f00\u9884\u8bbe\u6587\u4ef6\u5939\u2026");
+        openFolder.setToolTipText("\u81ea\u5df1\u4fdd\u5b58\u7684\u9884\u8bbe\u90fd\u5728\u8fd9\u91cc\uff0c\u53ef\u4ee5\u590d\u5236\u7ed9\u522b\u4eba");
+        openFolder.addActionListener(e -> openPresetFolder());
+        presetMenu.add(openFolder);
+    }
+
+    /**
+     * Lists the user's own presets so one can be removed.
+     *
+     * <p>One row per preset, each labelled with the name it deletes: a stray click on a plain
+     * "delete" button would be a disaster, but "删除 蓝色大肥鱼" says exactly what it does.
+     */
+    private void deletePresetFlow() {
+        final List<Preset> mine = Preset.userPresets();
+        if (mine.isEmpty()) {
+            statusLabel.setForeground(Theme.TEXT_DIM);
+            statusLabel.setText("\u8fd8\u6ca1\u6709\u81ea\u5df1\u4fdd\u5b58\u7684\u9884\u8bbe");
+            return;
+        }
+        final JDialog dialog = new JDialog(this, "\u5220\u9664\u9884\u8bbe", true);
+        dialog.setUndecorated(true);
+        dialog.setBackground(Theme.BG_BOTTOM);
+        CardPanel card = new CardPanel(18);
+        card.setLayout(new BorderLayout());
+        card.setBorder(javax.swing.BorderFactory.createEmptyBorder(16, 20, 16, 20));
+
+        JPanel rows = new JPanel();
+        rows.setOpaque(false);
+        rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
+        JLabel title = new JLabel("\u5220\u9664\u9884\u8bbe");
+        title.setFont(Theme.ui(Font.BOLD, 14f));
+        title.setForeground(Theme.TEXT);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rows.add(title);
+        JLabel hint = new JLabel("\u70b9\u51fb\u5373\u5220\u9664\uff0c\u65e0\u6cd5\u6062\u590d");
+        hint.setFont(Theme.ui(Font.PLAIN, 10.5f));
+        hint.setForeground(Theme.TEXT_DIM);
+        hint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rows.add(Box.createVerticalStrut(4));
+        rows.add(hint);
+        rows.add(Box.createVerticalStrut(12));
+        for (final Preset preset : mine) {
+            FlatButton row = new FlatButton("\u5220\u9664\u3000" + preset.getName(), FlatButton.Kind.SECONDARY);
+            row.setAlignmentX(Component.LEFT_ALIGNMENT);
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+            row.addActionListener(e -> {
+                boolean gone = Preset.delete(preset);
+                statusLabel.setForeground(gone ? Theme.TEXT_DIM : Theme.DANGER);
+                statusLabel.setText(gone
+                        ? "\u5df2\u5220\u9664\u9884\u8bbe\uff1a" + preset.getName()
+                        : "\u5220\u9664\u5931\u8d25\uff1a" + preset.getName());
+                dialog.dispose();
+            });
+            rows.add(row);
+            rows.add(Box.createVerticalStrut(6));
+        }
+        card.add(rows, BorderLayout.CENTER);
+
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        actions.setOpaque(false);
+        FlatButton cancel = new FlatButton("\u53d6\u6d88", FlatButton.Kind.SECONDARY);
+        cancel.addActionListener(e -> dialog.dispose());
+        actions.add(cancel);
+        JPanel south = new JPanel(new BorderLayout());
+        south.setOpaque(false);
+        south.setBorder(javax.swing.BorderFactory.createEmptyBorder(12, 0, 0, 0));
+        south.add(actions, BorderLayout.EAST);
+        card.add(south, BorderLayout.SOUTH);
+
+        dialog.setContentPane(card);
+        dialog.pack();
+        dialog.setSize(Math.max(360, dialog.getWidth()), dialog.getHeight());
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    /** Asks for a name and writes the current look out as a preset. */
+    private void saveCurrentAsPreset() {
+        final List<Preset> existing = Preset.userPresets();
+        String suggested = existing.isEmpty() ? "" : existing.get(existing.size() - 1).getName();
+        TextPromptDialog dialog = new TextPromptDialog(this,
+                "\u4fdd\u5b58\u4e3a\u9884\u8bbe\u914d\u7f6e",
+                "\u540d\u5b57\u968f\u4f60\u53d6\uff0c\u4e4b\u540e\u53f3\u952e\u83dc\u5355\u91cc\u4e00\u952e\u5957\u7528",
+                suggested,
+                text -> {
+                    String name = text == null ? "" : text.trim();
+                    if (name.isEmpty()) {
+                        return null;
+                    }
+                    if (Preset.exists(name)) {
+                        return "\u5df2\u6709\u540c\u540d\u9884\u8bbe\uff0c\u4fdd\u5b58\u4f1a\u8986\u76d6\u5b83";
+                    }
+                    return "\u4fdd\u5b58\u540e\u53ef\u5728\u53f3\u952e\u83dc\u5355\u300c\u9884\u8bbe\u914d\u7f6e\u300d\u91cc\u627e\u5230";
+                });
+        dialog.setVisible(true);
+        String name = dialog.getValue();
+        if (name == null) {
+            return;
+        }
+        boolean overwritten = Preset.exists(name);
+        try {
+            Preset.save(name, config);
+        } catch (Exception e) {
+            showError("\u4fdd\u5b58\u9884\u8bbe\u5931\u8d25\uff1a" + e.getMessage());
+            return;
+        }
+        statusLabel.setForeground(Theme.TEXT_DIM);
+        statusLabel.setText("\u5df2\u4fdd\u5b58\u9884\u8bbe\uff1a" + name + (overwritten ? "\uff08\u5df2\u8986\u76d6\uff09" : ""));
+    }
+
+    /** Opens the preset folder, where user presets are plain folders that can be copied or deleted. */
+    private void openPresetFolder() {
+        java.io.File folder = Preset.directory();
+        if (!folder.isDirectory() && !folder.mkdirs()) {
+            showError("\u65e0\u6cd5\u6253\u5f00\u9884\u8bbe\u6587\u4ef6\u5939");
+            return;
+        }
+        try {
+            java.awt.Desktop.getDesktop().open(folder);
+        } catch (Exception e) {
+            showError("\u65e0\u6cd5\u6253\u5f00\u9884\u8bbe\u6587\u4ef6\u5939\uff1a" + folder.getAbsolutePath());
+        }
+    }
+
+    /**
+     * Switches the widget to a saved look in one go: picture, crop, framed box, colour, font scale,
+     * card size and the rest of it. Used by the 预设配置 menu and by {@code --preset}.
      */
     public void applyPreset(Preset preset) {
         if (preset == null) {

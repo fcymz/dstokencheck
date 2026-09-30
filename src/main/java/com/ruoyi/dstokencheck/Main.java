@@ -257,7 +257,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[16];
+        boolean[] pass = new boolean[17];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -367,6 +367,8 @@ public final class Main {
             pass[14] = checkTransparentPicture();
 
             pass[15] = checkBundledPreset(menu);
+
+            pass[16] = checkUserPreset();
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -1398,6 +1400,12 @@ public final class Main {
         // One click means the menu really offers it, not just that the file exists.
         javax.swing.JMenu presetMenu = findSubMenu(menu, "\u9884\u8bbe\u914d\u7f6e");
         boolean inMenu = presetMenu != null && findMenuItem(presetMenu, preset.getName()) != null;
+        // Saving, deleting and the folder are the rest of the feature; a preset you cannot save is
+        // not a preset.
+        boolean actionsInMenu = presetMenu != null
+                && findMenuItem(presetMenu, "\u4fdd\u5b58\u5f53\u524d\u914d\u7f6e\u4e3a\u9884\u8bbe\u2026") != null
+                && findMenuItem(presetMenu, "\u5220\u9664\u9884\u8bbe\u2026") != null
+                && findMenuItem(presetMenu, "\u6253\u5f00\u9884\u8bbe\u6587\u4ef6\u5939\u2026") != null;
         AppConfig config = new AppConfig();
         config.removeBackgroundImage();
         config.clearCredentials();
@@ -1452,11 +1460,11 @@ public final class Main {
             boolean noCredentials = reloaded.getProtectedApiKey().isEmpty()
                     && !reloaded.isRememberApiKey();
 
-            boolean ok = named && inMenu && fileClean && imageCopied && cropKept && regionKept
+            boolean ok = named && inMenu && actionsInMenu && fileClean && imageCopied && cropKept && regionKept
                     && colorKept && scaleKept && sizeKept && positionKept && noCredentials;
             System.out.println((ok ? "PASS" : "FAIL") + "  \u9884\u8bbe\u914d\u7f6e"
                     + " (" + preset.getName()
-                    + ", \u83dc\u5355\u91cc\u53ef\u9009=" + inMenu
+                    + ", \u83dc\u5355\u91cc\u53ef\u9009=" + inMenu + " \u53ef\u4fdd\u5b58/\u5220\u9664=" + actionsInMenu
                     + ", \u56fe\u7247\u5df2\u590d\u5236=" + imageCopied
                     + ", \u88c1\u526a=" + cropKept + ", \u4f59\u989d\u6846=" + regionKept
                     + ", \u989c\u8272=" + colorKept + ", \u5b57\u53f7=" + scaleKept
@@ -1491,6 +1499,115 @@ public final class Main {
         fresh.setBalanceTextColor(new java.awt.Color(0xE9, 0xEE, 0xF8));
         fresh.setBounds(new Rectangle(-1, -1, 360, 180));
         fresh.save();
+    }
+
+    /**
+     * Saving the current look as a preset and getting it back again, unchanged.
+     *
+     * <p>This is the round trip the feature exists for, so it is checked as one: build a
+     * distinctive look, save it, wipe the settings, apply the saved preset, and compare. The saved
+     * file must also stay free of credentials, since a preset is something a user may well hand to
+     * somebody else.
+     */
+    private static boolean checkUserPreset() {
+        AppConfig config = new AppConfig();
+        resetSelftestConfig();
+        java.io.File source = new java.io.File(AppConfig.directory(), "selftest-user-preset.png");
+        try {
+            writeTestImage(source, 300, 150, new java.awt.Color(0x33, 0x66, 0x99));
+            config.storeBackgroundImage(source);
+            config.setImageCrop(new java.awt.geom.Rectangle2D.Float(0.10f, 0.10f, 0.80f, 0.80f));
+            config.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.20f, 0.30f, 0.60f, 0.20f));
+            config.setBalanceTextColor(new java.awt.Color(0xFF, 0x88, 0x44));
+            config.setFontScale(1.2f);
+            config.setBounds(new Rectangle(11, 22, 400, 200));
+            config.save();
+
+            java.io.File folder = Preset.save("\u81ea\u6d4b\u9884\u8bbe", config);
+            java.io.File settingsFile = new java.io.File(folder, "preset.properties");
+            boolean saved = settingsFile.isFile();
+            int pictures = 0;
+            java.io.File[] files = folder.listFiles();
+            if (files != null) {
+                for (java.io.File file : files) {
+                    if (file.getName().startsWith("background.")) {
+                        pictures++;
+                    }
+                }
+            }
+            boolean pictureSaved = pictures == 1;
+
+            // A preset is meant to be shareable: no credential keys, not even commented out ones
+            // that a naive paste would bring in as real settings.
+            boolean fileClean = true;
+            java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(
+                    new java.io.FileInputStream(settingsFile), "UTF-8"));
+            try {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("apiKeyProtected") || trimmed.startsWith("rememberApiKey")) {
+                        fileClean = false;
+                    }
+                }
+            } finally {
+                reader.close();
+            }
+
+            Preset saved2 = null;
+            for (Preset candidate : Preset.userPresets()) {
+                if ("\u81ea\u6d4b\u9884\u8bbe".equals(candidate.getName())) {
+                    saved2 = candidate;
+                }
+            }
+            boolean listed = saved2 != null && saved2.isUserPreset();
+
+            // Wipe everything, then apply the preset and see the look come back. The target has to
+            // be re-read, or we would be applying to the object that still holds the look we just
+            // saved — including its window position, which a preset must never carry.
+            resetSelftestConfig();
+            boolean applied = false;
+            if (saved2 != null) {
+                saved2.applyTo(new AppConfig());
+                applied = true;
+            }
+            AppConfig back = new AppConfig();
+            java.io.File restoredImage = back.getBackgroundImageFile();
+            java.awt.geom.Rectangle2D.Float region = back.getBalanceRegion();
+            java.awt.geom.Rectangle2D.Float crop = back.getImageCrop();
+            boolean imageOk = restoredImage != null && restoredImage.isFile();
+            boolean colorOk = back.getBalanceTextColor().equals(new java.awt.Color(0xFF, 0x88, 0x44));
+            boolean scaleOk = Math.abs(back.getFontScale() - 1.2f) < 0.01f;
+            boolean regionOk = region != null && Math.abs(region.y - 0.30f) < 0.002f;
+            boolean cropOk = crop != null && Math.abs(crop.width - 0.80f) < 0.002f;
+            boolean sizeOk = back.getBounds().width == 400 && back.getBounds().height == 200;
+            boolean placeOk = back.getBounds().x == -1 && back.getBounds().y == -1;
+            boolean restored = applied && imageOk && colorOk && scaleOk && regionOk && cropOk
+                    && sizeOk && placeOk;
+            boolean noCredentials = back.getProtectedApiKey().isEmpty() && !back.isRememberApiKey();
+
+            boolean removed = saved2 != null && Preset.delete(saved2) && !Preset.exists("\u81ea\u6d4b\u9884\u8bbe");
+
+            boolean ok = saved && pictureSaved && fileClean && listed && restored
+                    && noCredentials && removed;
+            System.out.println((ok ? "PASS" : "FAIL") + "  \u4fdd\u5b58\u4e3a\u9884\u8bbe"
+                    + " (\u5199\u5165=" + saved + ", \u56fe\u7247\u5df2\u5b58=" + pictureSaved
+                    + ", \u53ef\u5217\u51fa=" + listed
+                    + ", \u5957\u7528\u540e\u8fd8\u539f=" + restored
+                    + " [\u56fe=" + imageOk + " \u8272=" + colorOk + " \u5b57\u53f7=" + scaleOk
+                    + " \u6846=" + regionOk + " \u88c1\u526a=" + cropOk + " \u5c3a\u5bf8=" + sizeOk
+                    + " \u4f4d\u7f6e=" + placeOk + "]"
+                    + ", \u4e0d\u5e26\u51ed\u636e=" + (fileClean && noCredentials)
+                    + ", \u53ef\u5220\u9664=" + removed + ")");
+            return ok;
+        } catch (Exception e) {
+            System.out.println("FAIL  \u4fdd\u5b58\u4e3a\u9884\u8bbe: " + e);
+            return false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            source.delete();
+            resetSelftestConfig();
+        }
     }
 
     /** Writes a flat-colour PNG, used as a stand-in for a user's background image. */
@@ -1673,19 +1790,44 @@ public final class Main {
      * <p>Same thing the right-click menu does, for a machine that is being set up from a script.
      */
     private static void runPresetCommand(String[] args) {
-        java.util.List<Preset> presets = Preset.bundled();
+        if (args.length >= 2 && "save".equalsIgnoreCase(args[1].trim())) {
+            if (args.length < 3 || args[2].trim().isEmpty()) {
+                System.err.println("用法: java -jar dstokencheck.jar --preset save <\u540d\u5b57>");
+                System.exit(1);
+            }
+            try {
+                java.io.File folder = Preset.save(args[2].trim(), new AppConfig());
+                System.out.println("\u5df2\u4fdd\u5b58\u9884\u8bbe: " + args[2].trim());
+                System.out.println("\u9884\u8bbe\u76ee\u5f55  : " + folder.getAbsolutePath());
+            } catch (Exception e) {
+                System.err.println("\u4fdd\u5b58\u9884\u8bbe\u5931\u8d25: " + e.getMessage());
+                System.exit(1);
+            }
+            return;
+        }
+
+        java.util.List<Preset> mine = Preset.userPresets();
+        java.util.List<Preset> bundled = Preset.bundled();
         if (args.length < 2) {
-            System.out.println("可用的预设配置：");
-            for (Preset preset : presets) {
-                System.out.println("  " + preset.getId() + "    " + preset.getName()
+            System.out.println("\u53ef\u7528\u7684\u9884\u8bbe\u914d\u7f6e\uff1a");
+            for (Preset preset : mine) {
+                System.out.println("  [\u6211\u7684] " + preset.getName());
+            }
+            for (Preset preset : bundled) {
+                System.out.println("  [\u5185\u7f6e] " + preset.getName() + "    " + preset.getId()
                         + (preset.getDescription().isEmpty() ? "" : "    (" + preset.getDescription() + ")"));
             }
             System.out.println();
-            System.out.println("用法: java -jar dstokencheck.jar --preset <id>");
+            System.out.println("\u7528\u6cd5: java -jar dstokencheck.jar --preset <\u540d\u5b57>");
+            System.out.println("      java -jar dstokencheck.jar --preset save <\u540d\u5b57>");
             return;
         }
+
         String wanted = args[1].trim();
-        for (Preset preset : presets) {
+        // The user's own presets win over a bundled one of the same name: they saved it deliberately.
+        java.util.List<Preset> candidates = new java.util.ArrayList<Preset>(mine);
+        candidates.addAll(bundled);
+        for (Preset preset : candidates) {
             if (!preset.getId().equalsIgnoreCase(wanted) && !preset.getName().equals(wanted)) {
                 continue;
             }
@@ -1693,15 +1835,15 @@ public final class Main {
             try {
                 preset.applyTo(config);
             } catch (Exception e) {
-                System.err.println("应用预设失败: " + e.getMessage());
+                System.err.println("\u5e94\u7528\u9884\u8bbe\u5931\u8d25: " + e.getMessage());
                 System.exit(1);
             }
-            System.out.println("已应用预设: " + preset.getName());
-            System.out.println("配置文件  : " + config.getFile().getAbsolutePath());
-            System.out.println("背景图    : " + orNone(String.valueOf(config.getBackgroundImageFile())));
+            System.out.println("\u5df2\u5e94\u7528\u9884\u8bbe: " + preset.getName());
+            System.out.println("\u914d\u7f6e\u6587\u4ef6  : " + config.getFile().getAbsolutePath());
+            System.out.println("\u80cc\u666f\u56fe    : " + orNone(String.valueOf(config.getBackgroundImageFile())));
             return;
         }
-        System.err.println("找不到预设: " + wanted);
+        System.err.println("\u627e\u4e0d\u5230\u9884\u8bbe: " + wanted);
         System.exit(1);
     }
 

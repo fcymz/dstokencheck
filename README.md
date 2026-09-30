@@ -199,17 +199,28 @@ java -jar target\dstokencheck.jar
 
 ### 预设配置
 
-右键菜单 →「预设配置」→ 选一个，一次点完就换好整套外观：图片、裁剪、余额框、颜色、字号、卡片尺寸。
+**自己保存**：右键菜单 →「预设配置」→「保存当前配置为预设…」，起个名字就行。存下来的是整套外观：
+背景图（图片会被复制进预设目录）、裁剪、余额框、颜色、字号、卡片尺寸。
 
-目前内置一个 **预设配置-蓝色大肥鱼**（蓝色大肥鱼举着牌子，余额写在牌子上，140% 字号 / 主题蓝）：
+![保存为预设配置](tools/preset-save-dialog.png)
+
+**一键套用**：右键菜单 →「预设配置」，自己保存的排在前面、内置的排在后面，点一下即换好。
+
+- 预设就是**一个文件夹**，放在配置目录的 `presets\<名字>\` 里，里面一份 `preset.properties` 加一张
+  图片。想分享给别人，把这个文件夹拷过去就行（里面没有凭据）。
+- 「打开预设文件夹…」直接用资源管理器打开；「删除预设…」可以在应用内删掉自己保存的预设。
+  文件名会按名字自动生成（`\ / : * ? " < > |` 会换成 `_`），同名保存会覆盖。
+- 预设**不含凭据**：你的 API Key（以及「记住我」）不会被预设覆盖或清除。
+- 预设**不含窗口位置**：只给尺寸，不决定窗口出现在哪块屏幕的哪个角落。
+- 保存时如果本来就没有背景图，那这个预设就没有图片，套用它会**清掉当前背景图**——预设描述的是一整套
+  外观，不是打补丁。
+
+内置一个 **预设配置-蓝色大肥鱼**（蓝色大肥鱼举着牌子，余额写在牌子上，140% 字号 / 主题蓝）：
 
 ![预设配置-蓝色大肥鱼](tools/preset-blue-fat-fish.png)
 
-- 预设里的图片会被**复制**到配置目录，和手动导入的图片一样，之后换版本也不受影响。
-- 预设**不含凭据**：你的 API Key（以及「记住我」）不会被预设覆盖或清除。
-- 预设**不含窗口位置**：只给尺寸，不决定你的窗口出现在哪块屏幕的哪个角落。
-- 想改回去：再套用别的预设、或右键菜单 →「背景图…」自己调、或「恢复默认背景」回到内置卡片。
-- 命令行也可以：`java -jar dstokencheck.jar --preset` 列出，`--preset blue-fat-fish` 直接套用。
+命令行同样可用：`--preset` 列出、`--preset <名字>` 套用、`--preset save <名字>` 把当前配置存成预设。
+（命令行里的中文名字要经过控制台代码页，乱码时换个英文名，或直接用右键菜单保存。）
 
 ### 刷新间隔
 
@@ -311,9 +322,10 @@ java -jar target\dstokencheck.jar --autostart status
 java -jar target\dstokencheck.jar --autostart on
 java -jar target\dstokencheck.jar --autostart off
 
-:: 查看 / 套用内置预设外观
+:: 查看 / 套用 / 保存预设外观（自己保存的与内置的都会列出）
 java -jar target\dstokencheck.jar --preset
 java -jar target\dstokencheck.jar --preset blue-fat-fish
+java -jar target\dstokencheck.jar --preset save my-look
 
 :: 自测：拖动、缩放、最小尺寸、菜单项、字体缩放、刷新下限、背景图与裁剪等
 java -jar target\dstokencheck.jar --selftest
@@ -364,7 +376,7 @@ src/main/java/com/ruoyi/dstokencheck/
 ├── Main.java                     入口：界面编排与命令行参数分发
 ├── config/
 │   ├── AppConfig.java            配置读写
-│   └── Preset.java               内置预设外观（读 /presets 下的清单与设置）
+│   └── Preset.java               预设外观：内置（jar 内）与自己保存的（配置目录内）
 ├── security/SecretStore.java     API Key 加密（DPAPI 优先，AES-GCM 兜底）
 ├── autostart/AutoStart.java      开机自启：读写 HKCU Run 注册表项
 ├── model/
@@ -380,16 +392,22 @@ src/main/java/com/ruoyi/dstokencheck/
     ├── FlatButton.java           扁平的圆角按钮（主要／次要两种）
     ├── IconButton.java           自绘矢量图标按钮
     ├── ApiKeyDialog.java         无边框登录窗口
+    ├── TextPromptDialog.java     要一行文字的小对话框（保存预设时起名字）
     ├── BackgroundLayout.java     图片摆放与框选区域换算（小窗口、编辑器、预览共用）
     ├── BalanceTextRenderer.java  把余额数字缩放到任意方框内绘制
     ├── BackgroundRegionDialog.java  背景图编辑器：选图、框区域、调颜色、实时预览
     └── BalanceBoard.java         无边框主窗口（自实现拖动、缩放、置顶、退出登录）
 
-src/main/resources/presets/       内置预设，随 jar 一起打包
-├── index.txt                     预设清单（每行一个目录名）
+src/main/resources/presets/       随 jar 打包的内置预设
+├── index.txt                     内置预设清单（每行一个目录名）
 └── blue-fat-fish/
     ├── preset.properties         外观设置（不含凭据、不含窗口位置）
     └── background.png            预设用的图片
+
+配置目录/presets/                 自己保存的预设，与内置的同一套格式
+└── <名字>/
+    ├── preset.properties
+    └── background.<ext>          有背景图时才会有
 
 tools/                            开发期工具，不影响程序运行
 ├── SecretProbe.java              验证加密与「记住我」存取
@@ -403,6 +421,7 @@ tools/                            开发期工具，不影响程序运行
 ├── background-window-rect.png    矩形裁剪下的小窗口：就是图片本身，无边框无标题栏
 ├── background-window-alpha.png   带透明通道的图片：透明处透出桌面
 ├── preset-blue-fat-fish.png      预设配置-蓝色大肥鱼的渲染效果
+├── preset-save-dialog.png        「保存为预设配置」对话框
 ├── background-dialog.png         背景图设置窗口渲染效果
 ├── background-crop.png           矩形裁剪模式的渲染效果
 └── background-free.png           自由裁剪（手绘轮廓）模式的渲染效果

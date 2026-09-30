@@ -426,6 +426,35 @@ public class AppConfig {
                 parseInt(preset.getProperty("window.height"), height)));
     }
 
+    /**
+     * This configuration, written the way a preset file is.
+     *
+     * <p>The mirror image of {@link #applyPresetSettings}: what is written here is exactly what a
+     * preset can carry, so saving a preset and applying it again is a round trip. Credentials and
+     * the window position are deliberately absent — that is what makes a preset safe to share.
+     */
+    public Properties toPresetProperties(String name) {
+        Properties preset = new Properties();
+        preset.setProperty("preset.name", name);
+        if (imageCrop != null) {
+            preset.setProperty("imageCrop", formatRegion(imageCrop));
+        }
+        if (cropShape != null && !cropShape.isRectangle()) {
+            preset.setProperty("imageCropShape", cropShape.serialize());
+        }
+        if (balanceRegion != null) {
+            preset.setProperty("balanceRegion", formatRegion(balanceRegion));
+        }
+        preset.setProperty("balanceTextColor", formatColor(balanceTextColor));
+        preset.setProperty("fontScale", String.valueOf(fontScale));
+        preset.setProperty("opacity", String.valueOf(opacity));
+        preset.setProperty("alwaysOnTop", String.valueOf(alwaysOnTop));
+        preset.setProperty("refreshSeconds", String.valueOf(refreshSeconds));
+        preset.setProperty("window.width", String.valueOf(width));
+        preset.setProperty("window.height", String.valueOf(height));
+        return preset;
+    }
+
     private static float parseFloat(String raw, float fallback) {
         if (raw == null) {
             return fallback;

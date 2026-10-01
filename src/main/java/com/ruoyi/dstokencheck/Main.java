@@ -259,7 +259,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[19];
+        boolean[] pass = new boolean[20];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -375,6 +375,8 @@ public final class Main {
             pass[17] = checkMenuSkin(menu);
 
             pass[18] = checkPeakHoursAndUsage();
+
+            pass[19] = checkRefreshCountdown();
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -1975,6 +1977,154 @@ public final class Main {
             return 0;
         }
         return hits[0];
+    }
+
+    /**
+     * The refresh countdown in the corner of the framed box: only over a picture, only while the
+     * balance itself is shown, and actually counting down.
+     *
+     * <p>"Actually counting down" is the part worth testing: a hint that is computed once and never
+     * refreshed looks correct in a screenshot and is useless in use.
+     */
+    private static boolean checkRefreshCountdown() {
+        boolean hiddenWithoutPicture = false;
+        boolean shownWithPicture = false;
+        boolean countedDown = false;
+        boolean hiddenWhileHovering = false;
+        boolean drawnInTheCorner = false;
+        java.io.File source = new java.io.File(AppConfig.directory(), "selftest-countdown.png");
+        try {
+            // --- no picture: the card layout has a footer, and nothing to put in the box ---
+            final AppConfig plain = new AppConfig();
+            plain.removeBackgroundImage();
+            plain.save();
+            final BalanceBoard[] ref = new BalanceBoard[1];
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    DeepSeekClient demoClient = new DeepSeekClient();
+                    demoClient.setApiKey("sk-demo-000000000000000000000000");
+                    BalanceBoard b = new BalanceBoard(plain, demoClient, null);
+                    b.setLocation(-4000, -4000);
+                    b.setVisible(true);
+                    b.start();
+                    ref[0] = b;
+                }
+            });
+            Thread.sleep(700);
+            hiddenWithoutPicture = ref[0].countdownText().isEmpty();
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].dispose();
+                }
+            });
+
+            // --- with a picture, over a flat image so the corner can be checked by pixels ---
+            writeTestImage(source, 300, 150, new java.awt.Color(0x30, 0x30, 0x30));
+            final AppConfig picture = new AppConfig();
+            picture.storeBackgroundImage(source);
+            picture.setImageCrop(new java.awt.geom.Rectangle2D.Float(0f, 0f, 1f, 1f));
+            picture.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.2f, 0.35f, 0.6f, 0.3f));
+            picture.setRefreshSeconds(60);
+            picture.save();
+
+            final BalanceBoard[] pictureBoard = new BalanceBoard[1];
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    DeepSeekClient demoClient = new DeepSeekClient();
+                    demoClient.setApiKey("sk-demo-000000000000000000000000");
+                    BalanceBoard b = new BalanceBoard(picture, demoClient, null);
+                    b.setLocation(-4000, -4000);
+                    b.setVisible(true);
+                    b.start();
+                    pictureBoard[0] = b;
+                }
+            });
+            Thread.sleep(700);
+
+            String first = pictureBoard[0].countdownText();
+            shownWithPicture = first.matches("\u8fd8\u6709 \\d+ \u79d2\u5237\u65b0");
+            int before = first.isEmpty() ? -1 : Integer.parseInt(first.replaceAll("\\D+", ""));
+            drawnInTheCorner = inkInCountdownCorner(pictureBoard[0]);
+
+            Thread.sleep(1300);
+            String second = pictureBoard[0].countdownText();
+            int after = second.isEmpty() ? -1 : Integer.parseInt(second.replaceAll("\\D+", ""));
+            countedDown = before >= 0 && after < before && after >= before - 3;
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    pictureBoard[0].setBalanceHovered(true);
+                }
+            });
+            Thread.sleep(500);
+            hiddenWhileHovering = pictureBoard[0].countdownText().isEmpty();
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    pictureBoard[0].dispose();
+                }
+            });
+        } catch (Exception e) {
+            System.out.println("FAIL  \u5237\u65b0\u5012\u8ba1\u65f6: " + e);
+            return false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            source.delete();
+            resetSelftestConfig();
+        }
+
+        boolean ok = hiddenWithoutPicture && shownWithPicture && drawnInTheCorner
+                && countedDown && hiddenWhileHovering;
+        System.out.println((ok ? "PASS" : "FAIL") + "  \u5237\u65b0\u5012\u8ba1\u65f6"
+                + " (\u65e0\u80cc\u666f\u56fe\u65f6\u4e0d\u663e\u793a=" + hiddenWithoutPicture
+                + ", \u6709\u80cc\u666f\u56fe\u65f6\u663e\u793a=" + shownWithPicture
+                + ", \u753b\u5728\u5de6\u4e0b\u89d2=" + drawnInTheCorner
+                + ", \u786e\u5b9e\u5728\u8ba1\u65f6=" + countedDown
+                + ", \u60ac\u505c\u65f6\u9690\u85cf=" + hiddenWhileHovering + ")");
+        return ok;
+    }
+
+    /**
+     * True when the hint's strip inside the framed box has ink on it.
+     *
+     * <p>The picture covers the window exactly in this fixture (a 2:1 image, a 2:1 crop), so the box
+     * sits at the region's fractions of the window and the strip is the bottom of that box.
+     */
+    private static boolean inkInCountdownCorner(final BalanceBoard board) throws Exception {
+        final boolean[] found = {false};
+        SwingUtilities.invokeAndWait(new Runnable() {
+            @Override
+            public void run() {
+                Rectangle bounds = board.getBounds();
+                java.awt.image.BufferedImage shot = new java.awt.image.BufferedImage(
+                        bounds.width, bounds.height, java.awt.image.BufferedImage.TYPE_INT_RGB);
+                java.awt.Graphics2D g = shot.createGraphics();
+                try {
+                    board.paint(g);
+                } finally {
+                    g.dispose();
+                }
+                int x0 = Math.round(bounds.width * 0.20f);
+                int x1 = Math.round(bounds.width * 0.20f + bounds.width * 0.60f * 0.5f);
+                int y0 = Math.round(bounds.height * 0.35f + bounds.height * 0.30f) - 18;
+                int y1 = Math.round(bounds.height * 0.35f + bounds.height * 0.30f) - 1;
+                for (int y = Math.max(0, y0); y <= Math.min(shot.getHeight() - 1, y1) && !found[0]; y++) {
+                    for (int x = Math.max(0, x0); x <= Math.min(shot.getWidth() - 1, x1); x++) {
+                        int rgb = shot.getRGB(x, y);
+                        int sum = ((rgb >> 16) & 0xFF) + ((rgb >> 8) & 0xFF) + (rgb & 0xFF);
+                        if (sum > 300) {
+                            found[0] = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+        return found[0];
     }
 
     /** Writes a flat-colour PNG, used as a stand-in for a user's background image. */

@@ -96,6 +96,9 @@ public class BalanceBoard extends JFrame {
     /** One fade half. Two of them make the swap, and together they stay under a third of a second. */
     private static final int FADE_HALF_MS = 150;
     private static final int FADE_STEP_MS = 15;
+    /** The corner hint: font size before the user's font scale, and inset from the box corner. */
+    private static final float HINT_FONT = 10.5f;
+    private static final int HINT_INSET = 3;
     /** Slack around the balance's hit area, in pixels. */
     private static final int HOVER_SLACK = 4;
     private static final float F_SMALL = 10.5f;
@@ -197,6 +200,10 @@ public class BalanceBoard extends JFrame {
     /** Which pair of lines the labels currently hold. */
     private boolean showingHover;
     private Timer fadeTimer;
+    /** One-second clock for the "还有 N 秒刷新" hint; runs only in picture mode. */
+    private Timer countdownTimer;
+    /** When the current refresh interval started, so the hint can count down from it. */
+    private long refreshAnchorAt = System.currentTimeMillis();
     private java.math.BigDecimal usageAmount;
     private String usageSymbol = "";
     private boolean usageKnown;
@@ -390,6 +397,7 @@ public class BalanceBoard extends JFrame {
         currencyLabel.setFont(Theme.ui(Font.PLAIN, F_SMALL * s));
         accountLabel.setFont(Theme.ui(Font.PLAIN, F_SMALL * s));
         statusLabel.setFont(Theme.ui(Font.PLAIN, F_SMALL * s));
+        board.setHintFont(Theme.ui(Font.PLAIN, Math.max(9f, HINT_FONT * s)));
         for (Component c : extraPanel.getComponents()) {
             if (c instanceof JLabel) {
                 ((JLabel) c).setFont(Theme.ui(Font.PLAIN, F_SMALL * s));
@@ -718,6 +726,9 @@ public class BalanceBoard extends JFrame {
         config.save();
         refreshTimer.setDelay(seconds * 1000);
         refreshTimer.setInitialDelay(seconds * 1000);
+        // The countdown restarts too, or the new interval would be counted from the old anchor.
+        refreshAnchorAt = System.currentTimeMillis();
+        updateCountdown();
         statusLabel.setText("\u5237\u65b0\u95f4\u9694\u5df2\u8bbe\u4e3a " + seconds + " \u79d2");
     }
 
@@ -911,8 +922,51 @@ public class BalanceBoard extends JFrame {
 
     public void start() {
         accountLabel.setText(currentKeyLabel());
+        refreshAnchorAt = System.currentTimeMillis();
         refreshTimer.start();
         applyAlwaysOnTop(isAlwaysOnTop());
+        updateCountdown();
+    }
+
+    // --------------------------------------------------------- refresh hint
+
+    /**
+     * The seconds left before the next refresh, counted from the last one.
+     *
+     * <p>Rounded up, so it reads "还有 60 秒刷新" the moment a refresh lands and "还有 1 秒刷新" just
+     * before the next one, and never sits on 0 while nothing is happening.
+     */
+    private int remainingSeconds() {
+        long period = Math.max(AppConfig.MIN_REFRESH_SECONDS, config.getRefreshSeconds()) * 1000L;
+        long left = period - (System.currentTimeMillis() - refreshAnchorAt);
+        return (int) Math.max(0L, (left + 999L) / 1000L);
+    }
+
+    /** "还有 12 秒刷新" — empty unless a picture window is showing the balance itself. */
+    public String countdownText() {
+        if (backgroundImage == null || balanceHovered) {
+            return "";
+        }
+        return "\u8fd8\u6709 " + remainingSeconds() + " \u79d2\u5237\u65b0";
+    }
+
+    /**
+     * Pushes the hint to the panel and keeps the one-second clock running only while it is needed.
+     *
+     * <p>With no picture there is nowhere to put it — the card layout has the footer for that — so
+     * the timer is not left ticking for nothing.
+     */
+    private void updateCountdown() {
+        boolean wanted = backgroundImage != null;
+        if (wanted && countdownTimer == null) {
+            countdownTimer = new Timer(1000, e -> updateCountdown());
+        }
+        if (wanted && !countdownTimer.isRunning()) {
+            countdownTimer.start();
+        } else if (!wanted && countdownTimer != null && countdownTimer.isRunning()) {
+            countdownTimer.stop();
+        }
+        board.setCountdown(countdownText());
     }
 
     /** Footer label: which key is in use, masked, and whether it is remembered. */
@@ -931,6 +985,9 @@ public class BalanceBoard extends JFrame {
         if (fadeTimer != null) {
             fadeTimer.stop();
         }
+        if (countdownTimer != null) {
+            countdownTimer.stop();
+        }
         if (mouseWatcher != null) {
             try {
                 Toolkit.getDefaultToolkit().removeAWTEventListener(mouseWatcher);
@@ -947,6 +1004,9 @@ public class BalanceBoard extends JFrame {
     // --------------------------------------------------------------- refresh
 
     private void refresh() {
+        refreshAnchorAt = System.currentTimeMillis();
+        // A manual refresh restarts the countdown as much as a scheduled one does.
+        updateCountdown();
         if (busy) {
             return;
         }
@@ -1209,6 +1269,8 @@ public class BalanceBoard extends JFrame {
             startFade();
         }
         if (changed) {
+            // The countdown belongs to the balance being shown, so it leaves with it.
+            updateCountdown();
             applyCursor(edgeAt(MouseInfo.getPointerInfo() == null ? 0 : MouseInfo.getPointerInfo()
                     .getLocation().x, MouseInfo.getPointerInfo() == null ? 0 : MouseInfo.getPointerInfo()
                     .getLocation().y));
@@ -1612,6 +1674,8 @@ public class BalanceBoard extends JFrame {
         centerPanel.setVisible(image == null);
         updateChromeVisibility();
         applyPictureTranslucency();
+        // The hint exists only in picture mode, and this is where that changes.
+        updateCountdown();
         board.revalidate();
         board.repaint();
     }
@@ -1944,6 +2008,8 @@ public class BalanceBoard extends JFrame {
         private Color regionSubtitleColor;
         private boolean regionUiFont;
         private float textAlpha = 1f;
+        private String countdown = "";
+        private Font hintFont = Theme.ui(Font.PLAIN, HINT_FONT);
         /** False when the title bar and footer are hidden, which also drops the edge scrims. */
         private boolean chromeVisible = true;
         /** Last failed refresh, shown on the picture when there is no footer to show it in. */
@@ -2020,22 +2086,60 @@ public class BalanceBoard extends JFrame {
         }
 
         private void paintRegionText(Graphics g) {
-            if (regionText.isEmpty() || textAlpha < 0.02f) {
-                return;
-            }
             Rectangle2D.Float box = regionOnCard();
             if (box == null) {
                 return;
             }
+            Rectangle2D.Float text = box;
+            if (!countdown.isEmpty()) {
+                // Reserve a strip along the bottom for the hint, so a long caption cannot run into
+                // it. Capped at a share of the box: in a shallow box the figure still wins.
+                float strip = Math.min(hintFont.getSize2D() + 2 * HINT_INSET, box.height * 0.3f);
+                if (box.height - strip >= 12) {
+                    text = new Rectangle2D.Float(box.x, box.y, box.width, box.height - strip);
+                }
+            }
+            if (!regionText.isEmpty() && textAlpha >= 0.02f) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                try {
+                    // The fade is applied to the text's own alpha, which is why it looks the same over
+                    // any picture: it composites against whatever is behind it.
+                    BalanceTextRenderer.drawRegion(g2, regionText, regionSubtitle, text,
+                            Theme.alpha(regionTextColor, Math.round(255 * textAlpha)),
+                            regionSubtitleColor == null ? null
+                                    : Theme.alpha(regionSubtitleColor, Math.round(255 * textAlpha)),
+                            regionUiFont);
+                } finally {
+                    g2.dispose();
+                }
+            }
+            paintCountdown(g, box);
+        }
+
+        /**
+         * The refresh countdown, tucked into the bottom-left corner of the framed box.
+         *
+         * <p>Drawn from the box rather than from the text: a box the user sized is exactly the area
+         * they are looking at, and the corner stays put whether the balance is short or long. The
+         * shadow is what keeps it readable over whatever the picture happens to be there.
+         */
+        private void paintCountdown(Graphics g, Rectangle2D.Float box) {
+            if (countdown.isEmpty()) {
+                return;
+            }
             Graphics2D g2 = (Graphics2D) g.create();
             try {
-                // The fade is applied to the text's own alpha, which is why it looks the same over
-                // any picture: it composites against whatever is behind it.
-                BalanceTextRenderer.drawRegion(g2, regionText, regionSubtitle, box,
-                        Theme.alpha(regionTextColor, Math.round(255 * textAlpha)),
-                        regionSubtitleColor == null ? null
-                                : Theme.alpha(regionSubtitleColor, Math.round(255 * textAlpha)),
-                        regionUiFont);
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                        RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                g2.setFont(hintFont);
+                int x = Math.round(box.x) + HINT_INSET;
+                int y = Math.round(box.y + box.height) - HINT_INSET;
+                g2.setColor(new Color(0, 0, 0, 150));
+                g2.drawString(countdown, x + 1, y + 1);
+                // The user's own balance colour, a little softened: a hint, not the figure.
+                g2.setColor(Theme.alpha(regionTextColor, 205));
+                g2.drawString(countdown, x, y);
             } finally {
                 g2.dispose();
             }
@@ -2069,6 +2173,20 @@ public class BalanceBoard extends JFrame {
             }
             this.textAlpha = clamped;
             repaint();
+        }
+
+        /** The countdown shown in the box's bottom-left corner, or "" for nothing. */
+        void setCountdown(String text) {
+            this.countdown = text == null ? "" : text;
+            repaint();
+        }
+
+        /** The hint's font; the board owns the user's font scale, this class does not. */
+        void setHintFont(Font font) {
+            if (font != null) {
+                this.hintFont = font;
+                repaint();
+            }
         }
 
         /** The framed box in card coordinates, used to decide whether the pointer is on the balance. */

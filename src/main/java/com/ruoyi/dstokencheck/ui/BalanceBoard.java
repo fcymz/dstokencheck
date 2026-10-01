@@ -10,6 +10,7 @@ import com.sun.jna.platform.win32.User32;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser;
 import com.ruoyi.dstokencheck.model.BalanceSnapshot;
+import com.ruoyi.dstokencheck.model.PeakHours;
 import com.ruoyi.dstokencheck.model.CropShape;
 import com.ruoyi.dstokencheck.model.Wallet;
 import com.ruoyi.dstokencheck.net.DeepSeekClient;
@@ -45,6 +46,7 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.FontMetrics;
+import java.awt.MouseInfo;
 import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -89,6 +91,8 @@ public class BalanceBoard extends JFrame {
     // Base font sizes at 100%; every one is multiplied by AppConfig.getFontScale().
     private static final float F_TITLE = 11.5f;
     private static final float F_AMOUNT = 34f;
+    /** The hover line is a sentence, not a figure: it has to fit the card at a readable size. */
+    private static final float F_HOVER = 17f;
     private static final float F_SMALL = 10.5f;
     private static final float FONT_SCALE_STEP = 0.05f;
 
@@ -165,6 +169,21 @@ public class BalanceBoard extends JFrame {
     private Rectangle2D.Float balanceRegion;
     /** Compact "CNY ≈ 12.4M tokens · 含赠送 …" line shown inside the framed box. */
     private String regionSubtitle = "";
+
+    /** The colour the amount is normally drawn in, kept so a hover can hand it back. */
+    private Color amountColor;
+    /** The subtitle line as the last refresh left it, for the same reason. */
+    private String lastCurrencyText = " ";
+    /** Latest snapshot, so leaving a hover can redraw the real balance without a refetch. */
+    private BalanceSnapshot lastSnapshot;
+    /** True while the pointer rests on the balance. */
+    private boolean balanceHovered;
+    private String periodText = "";
+    private Color periodColor = Theme.TEXT;
+    private String usageText = "";
+    private java.math.BigDecimal usageAmount;
+    private String usageSymbol = "";
+    private boolean usageKnown;
 
     private final Timer refreshTimer;
     /** Periodically puts the widget back at the front of the topmost band. See reassertTopMost(). */
@@ -294,6 +313,7 @@ public class BalanceBoard extends JFrame {
 
         amountLabel.setForeground(Theme.TEXT);
         amountLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        amountColor = amountLabel.getForeground();
 
         currencyLabel.setForeground(Theme.TEXT_DIM);
         currencyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -993,6 +1013,19 @@ public class BalanceBoard extends JFrame {
         regionSubtitle = caption.toString();
         board.setRegionText(amountLabel.getText(), regionSubtitle, config.getBalanceTextColor());
 
+        // Today's spending is measured by watching the balance move; the config owns the baseline.
+        lastSnapshot = snap;
+        lastCurrencyText = currencyLabel.getText();
+        usageSymbol = snap.primarySymbol();
+        usageAmount = java.math.BigDecimal.valueOf(config.trackDailyUsage(
+                snap.totalInPrimaryCurrency().floatValue(), snap.primaryCurrency()));
+        usageKnown = true;
+        // A refresh can land while the pointer is still on the balance; the hover text wins, but it
+        // has to be rebuilt because the usage figure just changed.
+        if (balanceHovered) {
+            showBalanceHoverText(System.currentTimeMillis());
+        }
+
         statusLabel.setForeground(Theme.TEXT_DIM);
         statusLabel.setText("\u66f4\u65b0\u4e8e " + new SimpleDateFormat("HH:mm:ss").format(new Date(snap.getFetchedAtMillis())));
         board.setErrorText("");
@@ -1069,6 +1102,128 @@ public class BalanceBoard extends JFrame {
 
     // ------------------------------------------------- move + resize handling
 
+    /**
+     * Decides whether the pointer is on the balance, and switches the display over if it is.
+     *
+     * <p>Worked out from the pointer's screen position rather than from enter/exit pairs, because
+     * the balance is drawn by whichever component happens to be under the pointer — a label in the
+     * card layout, the painted panel over a picture — and enter/exit between those would flicker.
+     */
+    private void updateBalanceHover(MouseEvent me) {
+        Rectangle area = balanceAreaOnScreen();
+        setBalanceHovered(area != null && area.contains(me.getXOnScreen(), me.getYOnScreen()));
+    }
+
+    /**
+     * Where the balance is on screen: the framed box over a picture, the amount label otherwise.
+     *
+     * @return the hit area in screen coordinates, or null when it cannot be resolved yet
+     */
+    private Rectangle balanceAreaOnScreen() {
+        Rectangle local;
+        Component origin;
+        if (backgroundImage != null) {
+            Rectangle2D.Float box = board.regionOnCard();
+            if (box == null) {
+                return null;
+            }
+            local = new Rectangle(Math.round(box.x), Math.round(box.y),
+                    Math.round(box.width), Math.round(box.height));
+            origin = board;
+        } else {
+            local = amountLabel.getBounds();
+            origin = amountLabel.getParent();
+        }
+        if (local.width <= 0 || local.height <= 0) {
+            return null;
+        }
+        Rectangle inWindow = SwingUtilities.convertRectangle(origin, local, this);
+        Point corner = inWindow.getLocation();
+        SwingUtilities.convertPointToScreen(corner, this);
+        return new Rectangle(corner.x, corner.y, inWindow.width, inWindow.height);
+    }
+
+    /**
+     * Shows the tariff period and today's spending while the pointer rests on the balance.
+     *
+     * <p>Public because the pointer watcher is not the only caller: {@code --selftest} drives it
+     * directly to check the swap without a moving mouse.
+     */
+    public void setBalanceHovered(boolean hovered) {
+        setBalanceHovered(hovered, System.currentTimeMillis());
+    }
+
+    /**
+     * The same, evaluated at a given instant.
+     *
+     * <p>Split out for {@code --selftest}: one branch of this feature is green and the other is red,
+     * and a check that can only ever exercise whichever half of the day it happens to be run in is
+     * not much of a check.
+     */
+    public void setBalanceHovered(boolean hovered, long atMillis) {
+        // A repeat of the same state still has to redraw when the instant moved: crossing a tariff
+        // boundary while the pointer sits still has to be visible.
+        boolean changed = hovered != balanceHovered;
+        balanceHovered = hovered;
+        if (hovered) {
+            showBalanceHoverText(atMillis);
+        } else if (changed) {
+            clearBalanceHoverText();
+        }
+        if (changed) {
+            applyCursor(edgeAt(MouseInfo.getPointerInfo() == null ? 0 : MouseInfo.getPointerInfo()
+                    .getLocation().x, MouseInfo.getPointerInfo() == null ? 0 : MouseInfo.getPointerInfo()
+                    .getLocation().y));
+        }
+    }
+
+    /**
+     * The hover content: which tariff is running, and what has been used today.
+     *
+     * <p>Before the first balance arrives there is no honest usage figure, so the line says so
+     * instead of inventing one.
+     */
+    private void showBalanceHoverText(long atMillis) {
+        boolean offPeak = PeakHours.isOffPeak(atMillis);
+        periodText = PeakHours.label(atMillis);
+        periodColor = offPeak ? Theme.GOOD : Theme.DANGER;
+        usageText = usageLine();
+        if (backgroundImage != null) {
+            board.setHoverText(periodText, usageText, periodColor);
+        } else {
+            // The amount is set in a monospace face for the digits; the tariff line is Chinese, so it
+            // needs the UI font or it would be drawn as a row of empty boxes.
+            amountLabel.setFont(Theme.ui(Font.BOLD, F_HOVER * config.getFontScale()));
+            amountLabel.setText(periodText);
+            amountLabel.setForeground(periodColor);
+            currencyLabel.setText(usageText);
+        }
+        board.repaint();
+    }
+
+    private void clearBalanceHoverText() {
+        periodText = "";
+        usageText = "";
+        if (backgroundImage != null) {
+            board.setHoverText("", "", null);
+        } else if (lastSnapshot != null) {
+            amountLabel.setText(lastSnapshot.primarySymbol() + format(lastSnapshot.totalInPrimaryCurrency()));
+            amountLabel.setForeground(amountColor);
+            // Puts the monospace digit font back, along with every other label's font.
+            applyFonts();
+            currencyLabel.setText(lastCurrencyText);
+        }
+        board.repaint();
+    }
+
+    /** "今日已使用余额￥12.34", or a placeholder until the first balance is known. */
+    private String usageLine() {
+        if (!usageKnown) {
+            return "\u4eca\u65e5\u5df2\u4f7f\u7528\u4f59\u989d\u2014\u2014";
+        }
+        return "\u4eca\u65e5\u5df2\u4f7f\u7528\u4f59\u989d" + usageSymbol + format(usageAmount);
+    }
+
     private AWTEventListener createMouseWatcher() {
         return new AWTEventListener() {
             @Override
@@ -1085,6 +1240,10 @@ public class BalanceBoard extends JFrame {
                         if (!dragging && resizeEdge == NONE) {
                             applyCursor(edgeAt(me.getXOnScreen(), me.getYOnScreen()));
                         }
+                        updateBalanceHover(me);
+                        break;
+                    case MouseEvent.MOUSE_EXITED:
+                        setBalanceHovered(false);
                         break;
                     case MouseEvent.MOUSE_PRESSED:
                         if (SwingUtilities.isLeftMouseButton(me)) {
@@ -1315,7 +1474,9 @@ public class BalanceBoard extends JFrame {
                 type = Cursor.SE_RESIZE_CURSOR;
                 break;
             default:
-                type = Cursor.DEFAULT_CURSOR;
+                // Over the balance the pointer is a hand: the number is the one thing here that
+                // answers when you touch it.
+                type = balanceHovered ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR;
                 break;
         }
         Cursor want = Cursor.getPredefinedCursor(type);
@@ -1689,6 +1850,9 @@ public class BalanceBoard extends JFrame {
         private String regionText = "";
         private String regionSubtitle = "";
         private Color regionTextColor = Color.WHITE;
+        private String hoverText = "";
+        private String hoverSubtitle = "";
+        private Color hoverColor = Color.WHITE;
         /** False when the title bar and footer are hidden, which also drops the edge scrims. */
         private boolean chromeVisible = true;
         /** Last failed refresh, shown on the picture when there is no footer to show it in. */
@@ -1774,10 +1938,35 @@ public class BalanceBoard extends JFrame {
             }
             Graphics2D g2 = (Graphics2D) g.create();
             try {
-                BalanceTextRenderer.drawRegion(g2, regionText, regionSubtitle, box, regionTextColor);
+                if (hoverText.isEmpty()) {
+                    BalanceTextRenderer.drawRegion(g2, regionText, regionSubtitle, box, regionTextColor);
+                } else {
+                    // Same box, same fitting: hovering swaps what is drawn, it does not move things.
+                    // The UI font, because the tariff line is Chinese and the digits' monospace face
+                    // has no CJK glyphs.
+                    BalanceTextRenderer.drawRegion(g2, hoverText, hoverSubtitle, box, hoverColor, true);
+                }
             } finally {
                 g2.dispose();
             }
+        }
+
+        /**
+         * Replaces the balance with the tariff period and today's spending.
+         *
+         * <p>Passed in rather than computed here: the panel paints what it is told, like it does for
+         * the balance itself, and the board is the one that knows whether anything has been fetched.
+         */
+        void setHoverText(String period, String usage, Color color) {
+            this.hoverText = period == null ? "" : period;
+            this.hoverSubtitle = usage == null ? "" : usage;
+            this.hoverColor = color == null ? regionTextColor : color;
+            repaint();
+        }
+
+        /** The framed box in card coordinates, used to decide whether the pointer is on the balance. */
+        Rectangle2D.Float framedBox() {
+            return regionOnCard();
         }
 
         /**

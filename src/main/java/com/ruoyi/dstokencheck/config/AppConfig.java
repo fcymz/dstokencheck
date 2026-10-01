@@ -16,6 +16,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Locale;
 import java.util.Properties;
 
@@ -79,6 +81,20 @@ public class AppConfig {
      */
     private Color balanceTextColor = new Color(0xE9EEF8);
 
+    /**
+     * Today's spending, measured by watching the balance.
+     *
+     * <p>The balance API reports a current total and nothing about usage, so "used today" can only
+     * be the difference between what the balance was when this machine first saw it today and what
+     * it is now. That is an honest measurement of what happened while the widget was up, and it
+     * under-reports a day the widget was not running for — which is why the hover line says
+     * "已使用" rather than "消费".
+     */
+    private String usageDate = "";
+    private String usageCurrency = "";
+    private float usageOpening;
+    private boolean usageRecorded;
+
     /** The per-user directory holding the config file and the startup log. */
     public static File directory() {
         return new File(System.getProperty("user.home", "."), DIR_NAME);
@@ -130,6 +146,11 @@ public class AppConfig {
             imageCrop = cropShape.bounds();
         }
         balanceTextColor = parseColor(props.getProperty("balanceTextColor"), balanceTextColor);
+
+        usageDate = props.getProperty("usage.date", "").trim();
+        usageCurrency = props.getProperty("usage.currency", "").trim();
+        usageOpening = getFloat("usage.opening", usageOpening);
+        usageRecorded = !usageDate.isEmpty() && !usageCurrency.isEmpty();
     }
 
     public void save() {
@@ -163,6 +184,18 @@ public class AppConfig {
             props.setProperty("imageCropShape", cropShape.serialize());
         }
         props.setProperty("balanceTextColor", formatColor(balanceTextColor));
+
+        // What the balance was when it was first seen today. Kept next to the settings because it is
+        // the same kind of thing: local state this machine owns.
+        if (usageRecorded) {
+            props.setProperty("usage.date", usageDate);
+            props.setProperty("usage.currency", usageCurrency);
+            props.setProperty("usage.opening", String.valueOf(usageOpening));
+        } else {
+            props.remove("usage.date");
+            props.remove("usage.currency");
+            props.remove("usage.opening");
+        }
 
         OutputStream out = null;
         try {
@@ -424,6 +457,46 @@ public class AppConfig {
         setBounds(new Rectangle(x, y,
                 parseInt(preset.getProperty("window.width"), width),
                 parseInt(preset.getProperty("window.height"), height)));
+    }
+
+    /**
+     * Keeps today's opening balance up to date and reports how much has been used so far.
+     *
+     * <p>The first balance seen on a new day becomes that day's baseline, so the figure restarts at
+     * zero just after midnight. A balance that <em>rises</em> means a top-up rather than spending,
+     * and the baseline moves up with it instead of the difference going negative.
+     *
+     * @param balance  the current balance in {@code currency}
+     * @param currency the wallet this balance came from; a different one restarts the measurement
+     * @return the amount used today, never negative
+     */
+    public float trackDailyUsage(float balance, String currency) {
+        String today = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+        String wallet = currency == null ? "" : currency.trim();
+
+        if (!usageRecorded || !today.equals(usageDate) || !wallet.equals(usageCurrency)) {
+            usageDate = today;
+            usageCurrency = wallet;
+            usageOpening = balance;
+            usageRecorded = true;
+            save();
+            return 0f;
+        }
+        if (balance > usageOpening) {
+            // Topped up: measure again from the new, higher balance.
+            usageOpening = balance;
+            save();
+            return 0f;
+        }
+        return Math.max(0f, usageOpening - balance);
+    }
+
+    /** Forgets today's baseline, so the next balance seen starts a fresh measurement. */
+    public void clearDailyUsage() {
+        usageDate = "";
+        usageCurrency = "";
+        usageOpening = 0f;
+        usageRecorded = false;
     }
 
     /**

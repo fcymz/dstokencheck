@@ -41,6 +41,19 @@ public final class BalanceTextRenderer {
      */
     public static void drawRegion(Graphics2D g2, String amount, String subtitle,
                                   Rectangle2D box, Color color) {
+        drawRegion(g2, amount, subtitle, box, color, false);
+    }
+
+    /**
+     * Same layout, with the choice of font left to the caller.
+     *
+     * <p>The digits are set in a monospace face, which has no CJK glyphs: the tariff line
+     * ("现在是空闲时段") has to be drawn in the UI font or it arrives as a row of empty boxes.
+     *
+     * @param uiFont true to set the lines in the UI font instead of the monospace one
+     */
+    public static void drawRegion(Graphics2D g2, String amount, String subtitle,
+                                  Rectangle2D box, Color color, boolean uiFont) {
         if (amount == null || amount.isEmpty() || color == null) {
             return;
         }
@@ -48,7 +61,7 @@ public final class BalanceTextRenderer {
             return;
         }
         if (subtitle == null || subtitle.trim().isEmpty()) {
-            drawFitted(g2, amount, box, color);
+            drawFitted(g2, amount, box, color, uiFont);
             return;
         }
 
@@ -58,7 +71,7 @@ public final class BalanceTextRenderer {
         double gap = Math.max(1, box.getHeight() * 0.04);
         double amountHeight = box.getHeight() - subtitleHeight - gap;
         if (amountHeight < 8) {
-            drawFitted(g2, amount, box, color);
+            drawFitted(g2, amount, box, color, uiFont);
             return;
         }
 
@@ -67,9 +80,9 @@ public final class BalanceTextRenderer {
         Rectangle2D.Double subtitleBox = new Rectangle2D.Double(
                 box.getX(), box.getY() + amountHeight + gap, box.getWidth(), subtitleHeight);
 
-        drawFitted(g2, amount, amountBox, color);
+        drawFitted(g2, amount, amountBox, color, uiFont);
         // A little dimmer than the number, so the figure stays the thing you read first.
-        drawFitted(g2, subtitle, subtitleBox, Theme.alpha(color, 205));
+        drawFitted(g2, subtitle, subtitleBox, Theme.alpha(color, 205), uiFont);
     }
 
     /**
@@ -81,6 +94,12 @@ public final class BalanceTextRenderer {
      * @param color foreground colour
      */
     public static void drawFitted(Graphics2D g2, String text, Rectangle2D box, Color color) {
+        drawFitted(g2, text, box, color, false);
+    }
+
+    /** As above, optionally in the UI font; see {@link #drawRegion(Graphics2D, String, String, Rectangle2D, Color, boolean)}. */
+    public static void drawFitted(Graphics2D g2, String text, Rectangle2D box, Color color,
+                                  boolean uiFont) {
         if (text == null || text.isEmpty() || color == null) {
             return;
         }
@@ -96,14 +115,14 @@ public final class BalanceTextRenderer {
 
             // Start from the tallest font the box can hold, then shrink for width if needed.
             float size = (float) Math.max(MIN_SIZE, box.getHeight() * HEIGHT_FILL);
-            Font font = Theme.mono(Font.BOLD, size);
+            Font font = uiFont ? Theme.ui(Font.BOLD, size) : Theme.mono(Font.BOLD, size);
             FontMetrics fm = g.getFontMetrics(font);
             int textWidth = fm.stringWidth(text);
 
             double maxWidth = box.getWidth() * WIDTH_FILL;
             if (textWidth > maxWidth && textWidth > 0) {
                 size = (float) Math.max(MIN_SIZE, size * maxWidth / textWidth);
-                font = Theme.mono(Font.BOLD, size);
+                font = uiFont ? Theme.ui(Font.BOLD, size) : Theme.mono(Font.BOLD, size);
                 fm = g.getFontMetrics(font);
                 textWidth = fm.stringWidth(text);
             }

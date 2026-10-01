@@ -10,8 +10,10 @@ import com.ruoyi.dstokencheck.security.SecretStore;
 import com.ruoyi.dstokencheck.ui.ApiKeyDialog;
 import com.ruoyi.dstokencheck.ui.BackgroundRegionDialog;
 import com.ruoyi.dstokencheck.ui.BalanceBoard;
+import com.ruoyi.dstokencheck.ui.Theme;
 import com.ruoyi.dstokencheck.util.Log;
 
+import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingUtilities;
@@ -257,7 +259,7 @@ public final class Main {
 
         final BalanceBoard[] ref = new BalanceBoard[1];
         final boolean[] logoutFired = new boolean[1];
-        boolean[] pass = new boolean[18];
+        boolean[] pass = new boolean[19];
 
         try {
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -371,6 +373,8 @@ public final class Main {
             pass[16] = checkUserPreset();
 
             pass[17] = checkMenuSkin(menu);
+
+            pass[18] = checkPeakHoursAndUsage();
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -1721,6 +1725,245 @@ public final class Main {
             }
         }
         return false;
+    }
+
+    /**
+     * Hovering the balance shows which tariff is running and what today has cost.
+     *
+     * <p>Three things have to hold: the tariff rule at its exact boundaries, the arithmetic behind
+     * "used today", and the fact that the widget's own texts and colours really do change — in both
+     * layouts, the card's labels and the text painted over a picture.
+     */
+    private static boolean checkPeakHoursAndUsage() {
+        // --- the published rule, at the minute each window opens and closes (Beijing time) ---
+        boolean opens = com.ruoyi.dstokencheck.model.PeakHours.isPeak(beijing("2026-10-08T09:00"));
+        boolean inside = com.ruoyi.dstokencheck.model.PeakHours.isPeak(beijing("2026-10-08T11:59"));
+        boolean closes = !com.ruoyi.dstokencheck.model.PeakHours.isPeak(beijing("2026-10-08T12:00"));
+        boolean gap = !com.ruoyi.dstokencheck.model.PeakHours.isPeak(beijing("2026-10-08T13:00"));
+        boolean evening = com.ruoyi.dstokencheck.model.PeakHours.isPeak(beijing("2026-10-08T14:00"));
+        boolean done = !com.ruoyi.dstokencheck.model.PeakHours.isPeak(beijing("2026-10-08T18:00"));
+        boolean saturday = !com.ruoyi.dstokencheck.model.PeakHours.isPeak(beijing("2026-10-10T10:00"));
+        boolean holiday = !com.ruoyi.dstokencheck.model.PeakHours.isPeak(beijing("2026-10-01T09:30"));
+        boolean rule = opens && inside && closes && gap && evening && done && saturday && holiday;
+
+        // --- today's spending, measured by watching the balance move ---
+        AppConfig config = new AppConfig();
+        config.clearDailyUsage();
+        float baseline = config.trackDailyUsage(100f, "CNY");
+        float spent = config.trackDailyUsage(88.5f, "CNY");
+        float toppedUp = config.trackDailyUsage(120f, "CNY");
+        float afterTopUp = config.trackDailyUsage(115f, "CNY");
+        float otherWallet = config.trackDailyUsage(50f, "USD");
+        boolean usage = baseline == 0f && Math.abs(spent - 11.5f) < 0.01f && toppedUp == 0f
+                && Math.abs(afterTopUp - 5f) < 0.01f && otherWallet == 0f;
+        config.clearDailyUsage();
+
+        // Two instants that pin the rule down: a weekday morning inside a peak window, and a
+        // weekday lunchtime between the two windows.
+        final long peakAt = beijing("2026-10-08T10:00");
+        final long offPeakAt = beijing("2026-10-08T12:30");
+
+        // --- what the card layout actually shows ---
+        boolean cardLayout = false;
+        try {
+            final BalanceBoard[] ref = new BalanceBoard[1];
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    DeepSeekClient demoClient = new DeepSeekClient();
+                    demoClient.setApiKey("sk-demo-000000000000000000000000");
+                    BalanceBoard b = new BalanceBoard(new AppConfig(), demoClient, null);
+                    b.setLocation(-4000, -4000);
+                    b.setVisible(true);
+                    b.start();
+                    ref[0] = b;
+                }
+            });
+            Thread.sleep(700);
+
+            final java.util.List<JLabel> labels = new java.util.ArrayList<JLabel>();
+            collectLabels(ref[0].getContentPane(), labels);
+            final java.util.Map<JLabel, String> beforeText = new java.util.HashMap<JLabel, String>();
+            for (JLabel label : labels) {
+                beforeText.put(label, label.getText());
+            }
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].setBalanceHovered(true, peakAt);
+                }
+            });
+            boolean busyLine = false;
+            boolean usageLine = false;
+            for (JLabel label : labels) {
+                if ("\u73b0\u5728\u662f\u7e41\u5fd9\u65f6\u6bb5".equals(label.getText())) {
+                    busyLine = label.getForeground().equals(Theme.DANGER);
+                }
+                if (label.getText() != null
+                        && label.getText().startsWith("\u4eca\u65e5\u5df2\u4f7f\u7528\u4f59\u989d")) {
+                    usageLine = true;
+                }
+            }
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].setBalanceHovered(true, offPeakAt);
+                }
+            });
+            boolean idleLine = false;
+            for (JLabel label : labels) {
+                if ("\u73b0\u5728\u662f\u7a7a\u95f2\u65f6\u6bb5".equals(label.getText())) {
+                    idleLine = label.getForeground().equals(Theme.GOOD);
+                }
+            }
+            cardLayout = busyLine && idleLine && usageLine;
+
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].setBalanceHovered(false);
+                }
+            });
+            boolean restored = true;
+            for (JLabel label : labels) {
+                if (!beforeText.get(label).equals(label.getText())) {
+                    restored = false;
+                }
+            }
+            cardLayout = cardLayout && restored;
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].dispose();
+                }
+            });
+        } catch (Exception e) {
+            System.out.println("FAIL  \u60ac\u6d6e\u663e\u793a: " + e);
+            return false;
+        }
+
+        // A picture layout paints the balance itself, so the swap is checked by pixels there.
+        boolean pictureLayout = false;
+        java.io.File source = new java.io.File(AppConfig.directory(), "selftest-hover.png");
+        try {
+            writeTestImage(source, 300, 150, new java.awt.Color(0x30, 0x30, 0x30));
+            final AppConfig pictureConfig = new AppConfig();
+            pictureConfig.storeBackgroundImage(source);
+            pictureConfig.setImageCrop(new java.awt.geom.Rectangle2D.Float(0f, 0f, 1f, 1f));
+            pictureConfig.setBalanceRegion(new java.awt.geom.Rectangle2D.Float(0.2f, 0.35f, 0.6f, 0.3f));
+            pictureConfig.save();
+
+            final BalanceBoard[] ref = new BalanceBoard[1];
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    DeepSeekClient demoClient = new DeepSeekClient();
+                    demoClient.setApiKey("sk-demo-000000000000000000000000");
+                    BalanceBoard b = new BalanceBoard(pictureConfig, demoClient, null);
+                    b.setLocation(-4000, -4000);
+                    b.setVisible(true);
+                    b.start();
+                    ref[0] = b;
+                }
+            });
+            Thread.sleep(700);
+            // Nothing is hovered unless it is asked for: the pointer watcher wants a moving mouse.
+            // Both halves of the rule are forced here, because whichever one the wall clock is in,
+            // the other one is the branch nobody would ever test.
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].setBalanceHovered(true, peakAt);
+                }
+            });
+            int peakRed = countColour(ref[0], Theme.DANGER);
+            int peakGreen = countColour(ref[0], Theme.GOOD);
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].setBalanceHovered(true, offPeakAt);
+                }
+            });
+            int idleGreen = countColour(ref[0], Theme.GOOD);
+            int idleRed = countColour(ref[0], Theme.DANGER);
+            pictureLayout = peakRed > 0 && peakGreen == 0 && idleGreen > 0 && idleRed == 0;
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ref[0].dispose();
+                }
+            });
+        } catch (Exception e) {
+            System.out.println("FAIL  \u60ac\u6d6e\u663e\u793a: " + e);
+            return false;
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            source.delete();
+            // The picture this check installed would otherwise still be configured for the next run,
+            // which leaves the board in picture mode and changes the minimum size other checks use.
+            config.clearDailyUsage();
+            resetSelftestConfig();
+        }
+
+        boolean ok = rule && usage && cardLayout && pictureLayout;
+        System.out.println((ok ? "PASS" : "FAIL") + "  \u60ac\u6d6e\u663e\u793a\u65f6\u6bb5\u4e0e\u4eca\u65e5\u7528\u91cf"
+                + " (\u65f6\u6bb5\u89c4\u5219=" + rule
+                + ", \u4eca\u65e5\u7528\u91cf=\u57fa\u51c6/\u6d88\u8017/\u5145\u503c/\u518d\u6d88\u8017/\u6362\u5e01\u79cd=" + usage
+                + ", \u5361\u7247\u5e03\u5c40\u6587\u5b57\u4e0e\u989c\u8272=" + cardLayout
+                + ", \u80cc\u666f\u56fe\u5e03\u5c40\u6309\u50cf\u7d20=" + pictureLayout + ")");
+        return ok;
+    }
+
+    /** An instant written as Beijing local time, e.g. {@code 2026-10-08T09:00}. */
+    private static long beijing(String localDateTime) {
+        return java.time.LocalDateTime.parse(localDateTime)
+                .atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant().toEpochMilli();
+    }
+
+    private static void collectLabels(java.awt.Container root, java.util.List<JLabel> out) {
+        for (java.awt.Component component : root.getComponents()) {
+            if (component instanceof JLabel) {
+                out.add((JLabel) component);
+            } else if (component instanceof java.awt.Container) {
+                collectLabels((java.awt.Container) component, out);
+            }
+        }
+    }
+
+    /** Pixels of the painted window that are close to this colour: a rough "was it drawn" test. */
+    private static int countColour(final BalanceBoard board, final java.awt.Color wanted) {
+        final int[] hits = {0};
+        try {
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    Rectangle bounds = board.getBounds();
+                    java.awt.image.BufferedImage shot = new java.awt.image.BufferedImage(
+                            Math.max(1, bounds.width), Math.max(1, bounds.height),
+                            java.awt.image.BufferedImage.TYPE_INT_RGB);
+                    java.awt.Graphics2D g = shot.createGraphics();
+                    try {
+                        board.paint(g);
+                    } finally {
+                        g.dispose();
+                    }
+                    for (int y = 0; y < shot.getHeight(); y++) {
+                        for (int x = 0; x < shot.getWidth(); x++) {
+                            int rgb = shot.getRGB(x, y);
+                            if (Math.abs(((rgb >> 16) & 0xFF) - wanted.getRed()) < 26
+                                    && Math.abs(((rgb >> 8) & 0xFF) - wanted.getGreen()) < 26
+                                    && Math.abs((rgb & 0xFF) - wanted.getBlue()) < 26) {
+                                hits[0]++;
+                            }
+                        }
+                    }
+                }
+            });
+        } catch (Exception ignored) {
+            return 0;
+        }
+        return hits[0];
     }
 
     /** Writes a flat-colour PNG, used as a stand-in for a user's background image. */

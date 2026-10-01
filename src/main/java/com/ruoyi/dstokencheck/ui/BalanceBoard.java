@@ -99,6 +99,8 @@ public class BalanceBoard extends JFrame {
     /** The corner hint: font size before the user's font scale, and inset from the box corner. */
     private static final float HINT_FONT = 10.5f;
     private static final int HINT_INSET = 3;
+    /** Dimmer than the figure on purpose: a hint, not something to confuse with the balance. */
+    private static final int HINT_ALPHA = 180;
     /** Slack around the balance's hit area, in pixels. */
     private static final int HOVER_SLACK = 4;
     private static final float F_SMALL = 10.5f;
@@ -2090,21 +2092,15 @@ public class BalanceBoard extends JFrame {
             if (box == null) {
                 return;
             }
-            Rectangle2D.Float text = box;
-            if (!countdown.isEmpty()) {
-                // Reserve a strip along the bottom for the hint, so a long caption cannot run into
-                // it. Capped at a share of the box: in a shallow box the figure still wins.
-                float strip = Math.min(hintFont.getSize2D() + 2 * HINT_INSET, box.height * 0.3f);
-                if (box.height - strip >= 12) {
-                    text = new Rectangle2D.Float(box.x, box.y, box.width, box.height - strip);
-                }
-            }
+            // The balance and its caption own the whole framed box, exactly as they did before the
+            // hint existed: the countdown is placed around them, never the other way round.
+            Rectangle2D painted = null;
             if (!regionText.isEmpty() && textAlpha >= 0.02f) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 try {
                     // The fade is applied to the text's own alpha, which is why it looks the same over
                     // any picture: it composites against whatever is behind it.
-                    BalanceTextRenderer.drawRegion(g2, regionText, regionSubtitle, text,
+                    painted = BalanceTextRenderer.drawRegion(g2, regionText, regionSubtitle, box,
                             Theme.alpha(regionTextColor, Math.round(255 * textAlpha)),
                             regionSubtitleColor == null ? null
                                     : Theme.alpha(regionSubtitleColor, Math.round(255 * textAlpha)),
@@ -2113,7 +2109,7 @@ public class BalanceBoard extends JFrame {
                     g2.dispose();
                 }
             }
-            paintCountdown(g, box);
+            paintCountdown(g, box, painted);
         }
 
         /**
@@ -2122,8 +2118,13 @@ public class BalanceBoard extends JFrame {
          * <p>Drawn from the box rather than from the text: a box the user sized is exactly the area
          * they are looking at, and the corner stays put whether the balance is short or long. The
          * shadow is what keeps it readable over whatever the picture happens to be there.
+         *
+         * <p>It prefers the free space under the caption, still inside the box. When the box is only
+         * just tall enough for the two lines there is no such space, and covering the caption would
+         * be worse than stepping a few pixels past the frame's edge — so there it sits just below the
+         * box instead. The balance and its caption keep every pixel they had either way.
          */
-        private void paintCountdown(Graphics g, Rectangle2D.Float box) {
+        private void paintCountdown(Graphics g, Rectangle2D.Float box, Rectangle2D painted) {
             if (countdown.isEmpty()) {
                 return;
             }
@@ -2133,13 +2134,23 @@ public class BalanceBoard extends JFrame {
                 g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
                         RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
                 g2.setFont(hintFont);
+                FontMetrics fm = g2.getFontMetrics();
                 int x = Math.round(box.x) + HINT_INSET;
-                int y = Math.round(box.y + box.height) - HINT_INSET;
-                g2.setColor(new Color(0, 0, 0, 150));
-                g2.drawString(countdown, x + 1, y + 1);
-                // The user's own balance colour, a little softened: a hint, not the figure.
-                g2.setColor(Theme.alpha(regionTextColor, 205));
-                g2.drawString(countdown, x, y);
+                int floor = Math.round(box.y + box.height) - HINT_INSET;
+                Rectangle here = new Rectangle(x, floor - fm.getAscent(),
+                        fm.stringWidth(countdown), fm.getHeight());
+                int baseline = floor;
+                if (painted != null && painted.intersects(here)) {
+                    int below = Math.round(box.y + box.height) + fm.getAscent() + HINT_INSET;
+                    if (below < getHeight() - HINT_INSET) {
+                        baseline = below;
+                    }
+                }
+                g2.setColor(new Color(0, 0, 0, 170));
+                g2.drawString(countdown, x + 1, baseline + 1);
+                // The user's own balance colour, softened: a hint, and clearly not the figure.
+                g2.setColor(Theme.alpha(regionTextColor, HINT_ALPHA));
+                g2.drawString(countdown, x, baseline);
             } finally {
                 g2.dispose();
             }

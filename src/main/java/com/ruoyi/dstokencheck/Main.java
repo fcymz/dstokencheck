@@ -743,8 +743,9 @@ public final class Main {
                     int r = (rgb >> 16) & 0xFF;
                     int g = (rgb >> 8) & 0xFF;
                     int b = rgb & 0xFF;
-                    // White-ish: the balance figure (and its shadow is black, so it is excluded).
-                    if (r > 200 && g > 200 && b > 200) {
+                    // Near-white: the balance figure. Its shadow is black, and the refresh
+                    // countdown is deliberately dimmer than this, so neither is mistaken for it.
+                    if (r > 225 && g > 225 && b > 225) {
                         bright++;
                         if (x < x0 || x >= x1 || y < y0 || y >= y1) {
                             outside++;
@@ -1992,6 +1993,7 @@ public final class Main {
         boolean countedDown = false;
         boolean hiddenWhileHovering = false;
         boolean drawnInTheCorner = false;
+        boolean shownAfterPreset = false;
         java.io.File source = new java.io.File(AppConfig.directory(), "selftest-countdown.png");
         try {
             // --- no picture: the card layout has a footer, and nothing to put in the box ---
@@ -2068,6 +2070,34 @@ public final class Main {
                     pictureBoard[0].dispose();
                 }
             });
+
+            // --- a preset is the other way a picture gets in, and it shows the hint too ---
+            resetSelftestConfig();
+            java.util.List<Preset> presets = Preset.bundled();
+            if (!presets.isEmpty()) {
+                presets.get(0).applyTo(new AppConfig());
+            }
+            final BalanceBoard[] presetBoard = new BalanceBoard[1];
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    DeepSeekClient demoClient = new DeepSeekClient();
+                    demoClient.setApiKey("sk-demo-000000000000000000000000");
+                    BalanceBoard b = new BalanceBoard(new AppConfig(), demoClient, null);
+                    b.setLocation(-4000, -4000);
+                    b.setVisible(true);
+                    b.start();
+                    presetBoard[0] = b;
+                }
+            });
+            Thread.sleep(700);
+            shownAfterPreset = !presetBoard[0].countdownText().isEmpty();
+            SwingUtilities.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    presetBoard[0].dispose();
+                }
+            });
         } catch (Exception e) {
             System.out.println("FAIL  \u5237\u65b0\u5012\u8ba1\u65f6: " + e);
             return false;
@@ -2078,13 +2108,14 @@ public final class Main {
         }
 
         boolean ok = hiddenWithoutPicture && shownWithPicture && drawnInTheCorner
-                && countedDown && hiddenWhileHovering;
+                && countedDown && hiddenWhileHovering && shownAfterPreset;
         System.out.println((ok ? "PASS" : "FAIL") + "  \u5237\u65b0\u5012\u8ba1\u65f6"
                 + " (\u65e0\u80cc\u666f\u56fe\u65f6\u4e0d\u663e\u793a=" + hiddenWithoutPicture
                 + ", \u6709\u80cc\u666f\u56fe\u65f6\u663e\u793a=" + shownWithPicture
                 + ", \u753b\u5728\u5de6\u4e0b\u89d2=" + drawnInTheCorner
                 + ", \u786e\u5b9e\u5728\u8ba1\u65f6=" + countedDown
-                + ", \u60ac\u505c\u65f6\u9690\u85cf=" + hiddenWhileHovering + ")");
+                + ", \u60ac\u505c\u65f6\u9690\u85cf=" + hiddenWhileHovering
+                + ", \u5957\u7528\u9884\u8bbe\u540e\u663e\u793a=" + shownAfterPreset + ")");
         return ok;
     }
 

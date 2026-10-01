@@ -39,9 +39,9 @@ public final class BalanceTextRenderer {
      * the top part and the smaller line the bottom; both are fitted, so a narrow frame shrinks the
      * text rather than clipping it.
      */
-    public static void drawRegion(Graphics2D g2, String amount, String subtitle,
-                                  Rectangle2D box, Color color) {
-        drawRegion(g2, amount, subtitle, box, color, null, false);
+    public static Rectangle2D drawRegion(Graphics2D g2, String amount, String subtitle,
+                                         Rectangle2D box, Color color) {
+        return drawRegion(g2, amount, subtitle, box, color, null, false);
     }
 
     /**
@@ -53,18 +53,17 @@ public final class BalanceTextRenderer {
      * @param subtitleColor colour for the small line, or null to derive it from {@code color}
      * @param uiFont        true to set the lines in the UI font instead of the monospace one
      */
-    public static void drawRegion(Graphics2D g2, String amount, String subtitle,
+    public static Rectangle2D drawRegion(Graphics2D g2, String amount, String subtitle,
                                   Rectangle2D box, Color color, Color subtitleColor,
                                   boolean uiFont) {
         if (amount == null || amount.isEmpty() || color == null) {
-            return;
+            return null;
         }
         if (box.getWidth() < 2 || box.getHeight() < 2) {
-            return;
+            return null;
         }
         if (subtitle == null || subtitle.trim().isEmpty()) {
-            drawFitted(g2, amount, box, color, uiFont);
-            return;
+            return drawFitted(g2, amount, box, color, uiFont);
         }
 
         double subtitleHeight = Math.max(9, box.getHeight() * SUBTITLE_SHARE);
@@ -73,8 +72,7 @@ public final class BalanceTextRenderer {
         double gap = Math.max(1, box.getHeight() * 0.04);
         double amountHeight = box.getHeight() - subtitleHeight - gap;
         if (amountHeight < 8) {
-            drawFitted(g2, amount, box, color, uiFont);
-            return;
+            return drawFitted(g2, amount, box, color, uiFont);
         }
 
         Rectangle2D.Double amountBox = new Rectangle2D.Double(
@@ -82,11 +80,15 @@ public final class BalanceTextRenderer {
         Rectangle2D.Double subtitleBox = new Rectangle2D.Double(
                 box.getX(), box.getY() + amountHeight + gap, box.getWidth(), subtitleHeight);
 
-        drawFitted(g2, amount, amountBox, color, uiFont);
+        Rectangle2D drawn = drawFitted(g2, amount, amountBox, color, uiFont);
         // A little dimmer than the number, so the figure stays the thing you read first. The caller
         // may name the caption's colour instead — the hover line is the user's own colour.
-        drawFitted(g2, subtitle, subtitleBox,
+        Rectangle2D caption = drawFitted(g2, subtitle, subtitleBox,
                 subtitleColor == null ? Theme.alpha(color, 205) : subtitleColor, uiFont);
+        if (drawn == null) {
+            return caption;
+        }
+        return caption == null ? drawn : drawn.createUnion(caption);
     }
 
     /**
@@ -97,18 +99,18 @@ public final class BalanceTextRenderer {
      * @param box   target rectangle in the same coordinate space as {@code g2}
      * @param color foreground colour
      */
-    public static void drawFitted(Graphics2D g2, String text, Rectangle2D box, Color color) {
-        drawFitted(g2, text, box, color, false);
+    public static Rectangle2D drawFitted(Graphics2D g2, String text, Rectangle2D box, Color color) {
+        return drawFitted(g2, text, box, color, false);
     }
 
     /** As above, optionally in the UI font; see {@link #drawRegion(Graphics2D, String, String, Rectangle2D, Color, boolean)}. */
-    public static void drawFitted(Graphics2D g2, String text, Rectangle2D box, Color color,
+    public static Rectangle2D drawFitted(Graphics2D g2, String text, Rectangle2D box, Color color,
                                   boolean uiFont) {
         if (text == null || text.isEmpty() || color == null) {
-            return;
+            return null;
         }
         if (box.getWidth() < 2 || box.getHeight() < 2) {
-            return;
+            return null;
         }
 
         Graphics2D g = (Graphics2D) g2.create();
@@ -142,6 +144,8 @@ public final class BalanceTextRenderer {
 
             g.setColor(color);
             g.drawString(text, x, y);
+            // What was actually painted, so a caller can put something else beside it.
+            return new Rectangle2D.Double(x, y - fm.getAscent(), textWidth, fm.getHeight());
         } finally {
             g.dispose();
         }

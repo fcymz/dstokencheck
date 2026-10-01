@@ -93,6 +93,11 @@ public class BalanceBoard extends JFrame {
     private static final float F_AMOUNT = 34f;
     /** The hover line is a sentence, not a figure: it has to fit the card at a readable size. */
     private static final float F_HOVER = 17f;
+    /** One fade half. Two of them make the swap, and together they stay under a third of a second. */
+    private static final int FADE_HALF_MS = 150;
+    private static final int FADE_STEP_MS = 15;
+    /** Slack around the balance's hit area, in pixels. */
+    private static final int HOVER_SLACK = 4;
     private static final float F_SMALL = 10.5f;
     private static final float FONT_SCALE_STEP = 0.05f;
 
@@ -181,6 +186,17 @@ public class BalanceBoard extends JFrame {
     private String periodText = "";
     private Color periodColor = Theme.TEXT;
     private String usageText = "";
+    /** The balance as text, kept so a hover can hand it back without a refetch. */
+    private String regionAmountText = "\u2014";
+    /** The caption label's normal colour, restored when a hover ends. */
+    private Color currencyColor;
+    /** Instant the current hover is evaluated at. */
+    private long hoveredAt = System.currentTimeMillis();
+    /** 0 = the balance is fully shown, 1 = the tariff line is. Driven by the fade timer. */
+    private float contentAlpha = 1f;
+    /** Which pair of lines the labels currently hold. */
+    private boolean showingHover;
+    private Timer fadeTimer;
     private java.math.BigDecimal usageAmount;
     private String usageSymbol = "";
     private boolean usageKnown;
@@ -317,6 +333,7 @@ public class BalanceBoard extends JFrame {
 
         currencyLabel.setForeground(Theme.TEXT_DIM);
         currencyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        currencyColor = currencyLabel.getForeground();
 
         extraPanel.setOpaque(false);
         extraPanel.setLayout(new BoxLayout(extraPanel, BoxLayout.Y_AXIS));
@@ -911,6 +928,9 @@ public class BalanceBoard extends JFrame {
     private void shutdown() {
         refreshTimer.stop();
         topMostGuard.stop();
+        if (fadeTimer != null) {
+            fadeTimer.stop();
+        }
         if (mouseWatcher != null) {
             try {
                 Toolkit.getDefaultToolkit().removeAWTEventListener(mouseWatcher);
@@ -1011,20 +1031,21 @@ public class BalanceBoard extends JFrame {
             caption.append("  \u00b7  ").append(line);
         }
         regionSubtitle = caption.toString();
-        board.setRegionText(amountLabel.getText(), regionSubtitle, config.getBalanceTextColor());
 
         // Today's spending is measured by watching the balance move; the config owns the baseline.
         lastSnapshot = snap;
         lastCurrencyText = currencyLabel.getText();
+        regionAmountText = amountLabel.getText();
         usageSymbol = snap.primarySymbol();
         usageAmount = java.math.BigDecimal.valueOf(config.trackDailyUsage(
                 snap.totalInPrimaryCurrency().floatValue(), snap.primaryCurrency()));
         usageKnown = true;
-        // A refresh can land while the pointer is still on the balance; the hover text wins, but it
-        // has to be rebuilt because the usage figure just changed.
-        if (balanceHovered) {
-            showBalanceHoverText(System.currentTimeMillis());
-        }
+
+        // A refresh can land mid-hover; the tariff line stays up (no fade for new numbers), it just
+        // says something newer. The content is then placed by whichever pair of lines is current.
+        prepareHoverLines();
+        applyHoverContent();
+        applyContentAlpha();
 
         statusLabel.setForeground(Theme.TEXT_DIM);
         statusLabel.setText("\u66f4\u65b0\u4e8e " + new SimpleDateFormat("HH:mm:ss").format(new Date(snap.getFetchedAtMillis())));
@@ -1115,7 +1136,12 @@ public class BalanceBoard extends JFrame {
     }
 
     /**
-     * Where the balance is on screen: the framed box over a picture, the amount label otherwise.
+     * Where the balance is on screen: the framed box over a picture, the whole balance block
+     * otherwise.
+     *
+     * <p>The card layout answers with the panel that holds the figure, its currency line and the
+     * extra rows, not with the amount label's own bounds — the label is only as wide as the digits,
+     * and making people hit the glyphs to see the tariff is a game of darts.
      *
      * @return the hit area in screen coordinates, or null when it cannot be resolved yet
      */
@@ -1123,7 +1149,7 @@ public class BalanceBoard extends JFrame {
         Rectangle local;
         Component origin;
         if (backgroundImage != null) {
-            Rectangle2D.Float box = board.regionOnCard();
+            Rectangle2D.Float box = board.framedBox();
             if (box == null) {
                 return null;
             }
@@ -1131,12 +1157,14 @@ public class BalanceBoard extends JFrame {
                     Math.round(box.width), Math.round(box.height));
             origin = board;
         } else {
-            local = amountLabel.getBounds();
-            origin = amountLabel.getParent();
+            local = centerPanel.getBounds();
+            origin = centerPanel.getParent();
         }
         if (local.width <= 0 || local.height <= 0) {
             return null;
         }
+        // A few pixels of slack, so grazing the edge still counts.
+        local.grow(HOVER_SLACK, HOVER_SLACK);
         Rectangle inWindow = SwingUtilities.convertRectangle(origin, local, this);
         Point corner = inWindow.getLocation();
         SwingUtilities.convertPointToScreen(corner, this);
@@ -1161,14 +1189,24 @@ public class BalanceBoard extends JFrame {
      * not much of a check.
      */
     public void setBalanceHovered(boolean hovered, long atMillis) {
-        // A repeat of the same state still has to redraw when the instant moved: crossing a tariff
-        // boundary while the pointer sits still has to be visible.
         boolean changed = hovered != balanceHovered;
         balanceHovered = hovered;
+        this.hoveredAt = atMillis;
         if (hovered) {
-            showBalanceHoverText(atMillis);
+            if (changed) {
+                // A fresh hover fades in; the content is prepared now so the fade has something to
+                // fade towards.
+                prepareHoverLines();
+                startFade();
+            } else {
+                // Same hover, new instant: crossing 09:00 while the pointer sits still has to be
+                // visible, and there is nothing to fade between.
+                prepareHoverLines();
+                applyHoverContent();
+                applyContentAlpha();
+            }
         } else if (changed) {
-            clearBalanceHoverText();
+            startFade();
         }
         if (changed) {
             applyCursor(edgeAt(MouseInfo.getPointerInfo() == null ? 0 : MouseInfo.getPointerInfo()
@@ -1177,43 +1215,96 @@ public class BalanceBoard extends JFrame {
         }
     }
 
+    // ------------------------------------------------------------ hover fade
+
+    /**
+     * Starts (or reverses) the fade between the balance and the tariff line.
+     *
+     * <p>Two halves on purpose. The two lines are different texts in different fonts, so there is
+     * nothing to interpolate: the outgoing line fades to nothing, the content is swapped while it is
+     * invisible, and the incoming line fades in. Cross-fading them in place would show two strings
+     * on top of each other halfway through.
+     */
+    private void startFade() {
+        if (fadeTimer == null) {
+            fadeTimer = new Timer(FADE_STEP_MS, e -> tickFade());
+            fadeTimer.setCoalesce(true);
+        }
+        if (!fadeTimer.isRunning()) {
+            fadeTimer.start();
+        }
+    }
+
+    private void tickFade() {
+        float step = FADE_STEP_MS / (float) FADE_HALF_MS;
+        boolean wantHover = balanceHovered;
+        if (wantHover != showingHover) {
+            // Fading the current content out; swap once it is invisible.
+            contentAlpha -= step;
+            if (contentAlpha <= 0f) {
+                contentAlpha = 0f;
+                showingHover = wantHover;
+                applyHoverContent();
+            }
+        } else {
+            contentAlpha += step;
+            if (contentAlpha >= 1f) {
+                contentAlpha = 1f;
+                fadeTimer.stop();
+            }
+        }
+        applyContentAlpha();
+    }
+
+    /** Puts the right pair of lines in place: the balance, or the tariff period and its usage. */
+    private void applyHoverContent() {
+        if (backgroundImage != null) {
+            if (showingHover) {
+                board.setRegionText(periodText, usageText, periodColor,
+                        config.getBalanceTextColor(), true);
+            } else {
+                board.setRegionText(regionAmountText, regionSubtitle, config.getBalanceTextColor(),
+                        null, false);
+            }
+            return;
+        }
+        if (showingHover) {
+            // The amount is set in a monospace face for the digits; the tariff line is Chinese, so it
+            // needs the UI font or it would be drawn as a row of empty boxes.
+            amountLabel.setFont(Theme.ui(Font.BOLD, F_HOVER * config.getFontScale()));
+            amountLabel.setText(periodText);
+            currencyLabel.setText(usageText);
+        } else {
+            amountLabel.setFont(Theme.mono(Font.BOLD, F_AMOUNT * config.getFontScale()));
+            amountLabel.setText(regionAmountText);
+            currencyLabel.setText(lastCurrencyText);
+        }
+    }
+
+    /** Pushes the current fade position into whichever layout is on screen. */
+    private void applyContentAlpha() {
+        float alpha = contentAlpha;
+        if (backgroundImage != null) {
+            board.setTextAlpha(alpha);
+            return;
+        }
+        Color amountBase = showingHover ? periodColor : amountColor;
+        Color captionBase = showingHover ? config.getBalanceTextColor() : currencyColor;
+        amountLabel.setForeground(Theme.alpha(amountBase, Math.round(255 * alpha)));
+        currencyLabel.setForeground(Theme.alpha(captionBase, Math.round(255 * alpha)));
+    }
+
     /**
      * The hover content: which tariff is running, and what has been used today.
      *
      * <p>Before the first balance arrives there is no honest usage figure, so the line says so
      * instead of inventing one.
      */
-    private void showBalanceHoverText(long atMillis) {
-        boolean offPeak = PeakHours.isOffPeak(atMillis);
-        periodText = PeakHours.label(atMillis);
+    private void prepareHoverLines() {
+        boolean offPeak = PeakHours.isOffPeak(hoveredAt);
+        periodText = PeakHours.label(hoveredAt);
         periodColor = offPeak ? Theme.GOOD : Theme.DANGER;
         usageText = usageLine();
-        if (backgroundImage != null) {
-            board.setHoverText(periodText, usageText, periodColor);
-        } else {
-            // The amount is set in a monospace face for the digits; the tariff line is Chinese, so it
-            // needs the UI font or it would be drawn as a row of empty boxes.
-            amountLabel.setFont(Theme.ui(Font.BOLD, F_HOVER * config.getFontScale()));
-            amountLabel.setText(periodText);
-            amountLabel.setForeground(periodColor);
-            currencyLabel.setText(usageText);
-        }
-        board.repaint();
-    }
-
-    private void clearBalanceHoverText() {
-        periodText = "";
-        usageText = "";
-        if (backgroundImage != null) {
-            board.setHoverText("", "", null);
-        } else if (lastSnapshot != null) {
-            amountLabel.setText(lastSnapshot.primarySymbol() + format(lastSnapshot.totalInPrimaryCurrency()));
-            amountLabel.setForeground(amountColor);
-            // Puts the monospace digit font back, along with every other label's font.
-            applyFonts();
-            currencyLabel.setText(lastCurrencyText);
-        }
-        board.repaint();
     }
 
     /** "今日已使用余额￥12.34", or a placeholder until the first balance is known. */
@@ -1850,9 +1941,9 @@ public class BalanceBoard extends JFrame {
         private String regionText = "";
         private String regionSubtitle = "";
         private Color regionTextColor = Color.WHITE;
-        private String hoverText = "";
-        private String hoverSubtitle = "";
-        private Color hoverColor = Color.WHITE;
+        private Color regionSubtitleColor;
+        private boolean regionUiFont;
+        private float textAlpha = 1f;
         /** False when the title bar and footer are hidden, which also drops the edge scrims. */
         private boolean chromeVisible = true;
         /** Last failed refresh, shown on the picture when there is no footer to show it in. */
@@ -1929,7 +2020,7 @@ public class BalanceBoard extends JFrame {
         }
 
         private void paintRegionText(Graphics g) {
-            if (regionText.isEmpty()) {
+            if (regionText.isEmpty() || textAlpha < 0.02f) {
                 return;
             }
             Rectangle2D.Float box = regionOnCard();
@@ -1938,29 +2029,45 @@ public class BalanceBoard extends JFrame {
             }
             Graphics2D g2 = (Graphics2D) g.create();
             try {
-                if (hoverText.isEmpty()) {
-                    BalanceTextRenderer.drawRegion(g2, regionText, regionSubtitle, box, regionTextColor);
-                } else {
-                    // Same box, same fitting: hovering swaps what is drawn, it does not move things.
-                    // The UI font, because the tariff line is Chinese and the digits' monospace face
-                    // has no CJK glyphs.
-                    BalanceTextRenderer.drawRegion(g2, hoverText, hoverSubtitle, box, hoverColor, true);
-                }
+                // The fade is applied to the text's own alpha, which is why it looks the same over
+                // any picture: it composites against whatever is behind it.
+                BalanceTextRenderer.drawRegion(g2, regionText, regionSubtitle, box,
+                        Theme.alpha(regionTextColor, Math.round(255 * textAlpha)),
+                        regionSubtitleColor == null ? null
+                                : Theme.alpha(regionSubtitleColor, Math.round(255 * textAlpha)),
+                        regionUiFont);
             } finally {
                 g2.dispose();
             }
         }
 
         /**
-         * Replaces the balance with the tariff period and today's spending.
+         * Replaces what is drawn in the framed box.
          *
-         * <p>Passed in rather than computed here: the panel paints what it is told, like it does for
-         * the balance itself, and the board is the one that knows whether anything has been fetched.
+         * <p>One slot rather than a normal set and a hover set: the balance and the tariff line are
+         * never on screen together, and giving them the same slot is what lets the fade between
+         * them be a plain alpha ramp.
+         *
+         * @param subtitleColor colour for the small line, or null to dim {@code color} as usual
+         * @param uiFont        true for CJK-capable text (the tariff line, which has no monospace glyphs)
          */
-        void setHoverText(String period, String usage, Color color) {
-            this.hoverText = period == null ? "" : period;
-            this.hoverSubtitle = usage == null ? "" : usage;
-            this.hoverColor = color == null ? regionTextColor : color;
+        void setRegionText(String amount, String subtitle, Color color, Color subtitleColor,
+                           boolean uiFont) {
+            this.regionText = amount == null ? "" : amount;
+            this.regionSubtitle = subtitle == null ? "" : subtitle;
+            this.regionTextColor = color == null ? Color.WHITE : color;
+            this.regionSubtitleColor = subtitleColor;
+            this.regionUiFont = uiFont;
+            repaint();
+        }
+
+        /** How visible the framed text is, 0..1. Driven by the board's fade. */
+        void setTextAlpha(float alpha) {
+            float clamped = Math.max(0f, Math.min(1f, alpha));
+            if (Math.abs(clamped - textAlpha) < 0.004f) {
+                return;
+            }
+            this.textAlpha = clamped;
             repaint();
         }
 

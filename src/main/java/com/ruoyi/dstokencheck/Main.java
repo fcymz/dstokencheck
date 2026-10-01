@@ -1766,13 +1766,15 @@ public final class Main {
         // --- what the card layout actually shows ---
         boolean cardLayout = false;
         try {
+            final AppConfig cardConfig = new AppConfig();
+            final java.awt.Color userColour = cardConfig.getBalanceTextColor();
             final BalanceBoard[] ref = new BalanceBoard[1];
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
                 public void run() {
                     DeepSeekClient demoClient = new DeepSeekClient();
                     demoClient.setApiKey("sk-demo-000000000000000000000000");
-                    BalanceBoard b = new BalanceBoard(new AppConfig(), demoClient, null);
+                    BalanceBoard b = new BalanceBoard(cardConfig, demoClient, null);
                     b.setLocation(-4000, -4000);
                     b.setVisible(true);
                     b.start();
@@ -1794,8 +1796,11 @@ public final class Main {
                     ref[0].setBalanceHovered(true, peakAt);
                 }
             });
+            // The swap happens at the midpoint of a two-part fade, so give it time to settle.
+            Thread.sleep(500);
             boolean busyLine = false;
             boolean usageLine = false;
+            boolean usageKeepsUserColour = false;
             for (JLabel label : labels) {
                 if ("\u73b0\u5728\u662f\u7e41\u5fd9\u65f6\u6bb5".equals(label.getText())) {
                     busyLine = label.getForeground().equals(Theme.DANGER);
@@ -1803,6 +1808,8 @@ public final class Main {
                 if (label.getText() != null
                         && label.getText().startsWith("\u4eca\u65e5\u5df2\u4f7f\u7528\u4f59\u989d")) {
                     usageLine = true;
+                    // Only the tariff line is coloured by the rule; the rest keeps the user's colour.
+                    usageKeepsUserColour = label.getForeground().equals(userColour);
                 }
             }
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -1811,13 +1818,14 @@ public final class Main {
                     ref[0].setBalanceHovered(true, offPeakAt);
                 }
             });
+            Thread.sleep(500);
             boolean idleLine = false;
             for (JLabel label : labels) {
                 if ("\u73b0\u5728\u662f\u7a7a\u95f2\u65f6\u6bb5".equals(label.getText())) {
                     idleLine = label.getForeground().equals(Theme.GOOD);
                 }
             }
-            cardLayout = busyLine && idleLine && usageLine;
+            cardLayout = busyLine && idleLine && usageLine && usageKeepsUserColour;
 
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -1825,6 +1833,7 @@ public final class Main {
                     ref[0].setBalanceHovered(false);
                 }
             });
+            Thread.sleep(500);
             boolean restored = true;
             for (JLabel label : labels) {
                 if (!beforeText.get(label).equals(label.getText())) {
@@ -1877,6 +1886,7 @@ public final class Main {
                     ref[0].setBalanceHovered(true, peakAt);
                 }
             });
+            Thread.sleep(500);
             int peakRed = countColour(ref[0], Theme.DANGER);
             int peakGreen = countColour(ref[0], Theme.GOOD);
             SwingUtilities.invokeAndWait(new Runnable() {
@@ -1885,6 +1895,7 @@ public final class Main {
                     ref[0].setBalanceHovered(true, offPeakAt);
                 }
             });
+            Thread.sleep(500);
             int idleGreen = countColour(ref[0], Theme.GOOD);
             int idleRed = countColour(ref[0], Theme.DANGER);
             pictureLayout = peakRed > 0 && peakGreen == 0 && idleGreen > 0 && idleRed == 0;

@@ -41,19 +41,21 @@ public final class BalanceTextRenderer {
      */
     public static void drawRegion(Graphics2D g2, String amount, String subtitle,
                                   Rectangle2D box, Color color) {
-        drawRegion(g2, amount, subtitle, box, color, false);
+        drawRegion(g2, amount, subtitle, box, color, null, false);
     }
 
     /**
-     * Same layout, with the choice of font left to the caller.
+     * Same layout, with the font and the caption's colour left to the caller.
      *
      * <p>The digits are set in a monospace face, which has no CJK glyphs: the tariff line
      * ("现在是空闲时段") has to be drawn in the UI font or it arrives as a row of empty boxes.
      *
-     * @param uiFont true to set the lines in the UI font instead of the monospace one
+     * @param subtitleColor colour for the small line, or null to derive it from {@code color}
+     * @param uiFont        true to set the lines in the UI font instead of the monospace one
      */
     public static void drawRegion(Graphics2D g2, String amount, String subtitle,
-                                  Rectangle2D box, Color color, boolean uiFont) {
+                                  Rectangle2D box, Color color, Color subtitleColor,
+                                  boolean uiFont) {
         if (amount == null || amount.isEmpty() || color == null) {
             return;
         }
@@ -81,8 +83,10 @@ public final class BalanceTextRenderer {
                 box.getX(), box.getY() + amountHeight + gap, box.getWidth(), subtitleHeight);
 
         drawFitted(g2, amount, amountBox, color, uiFont);
-        // A little dimmer than the number, so the figure stays the thing you read first.
-        drawFitted(g2, subtitle, subtitleBox, Theme.alpha(color, 205), uiFont);
+        // A little dimmer than the number, so the figure stays the thing you read first. The caller
+        // may name the caption's colour instead — the hover line is the user's own colour.
+        drawFitted(g2, subtitle, subtitleBox,
+                subtitleColor == null ? Theme.alpha(color, 205) : subtitleColor, uiFont);
     }
 
     /**

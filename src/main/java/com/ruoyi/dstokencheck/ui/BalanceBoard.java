@@ -103,6 +103,9 @@ public class BalanceBoard extends JFrame {
     private static final int HINT_ALPHA = 180;
     /** Slack around the balance's hit area, in pixels. */
     private static final int HOVER_SLACK = 6;
+    /** How often the pointer is re-read, and how stale the hover line may get while it sits still. */
+    private static final int HOVER_POLL_MS = 120;
+    private static final long HOVER_REFRESH_MS = 4000;
     private static final float F_SMALL = 10.5f;
     private static final float FONT_SCALE_STEP = 0.05f;
 
@@ -214,6 +217,13 @@ public class BalanceBoard extends JFrame {
     /** Periodically puts the widget back at the front of the topmost band. See reassertTopMost(). */
     private final Timer topMostGuard;
     private final AWTEventListener mouseWatcher;
+    /**
+     * Watches the pointer itself rather than waiting for events. See {@link #pollHover()} for why
+     * events are not enough over a see-through picture.
+     */
+    private final Timer hoverPoll;
+    /** Set from {@code dstokencheck.trace.hover}; null unless someone is tracing hover decisions. */
+    private final String hoverTracePath;
 
     private int resizeEdge = NONE;
     private Point pressPoint;
@@ -306,6 +316,13 @@ public class BalanceBoard extends JFrame {
         refreshTimer = new Timer(
                 Math.max(AppConfig.MIN_REFRESH_SECONDS, config.getRefreshSeconds()) * 1000, e -> refresh());
         refreshTimer.setInitialDelay(0);
+
+        // Watches the pointer directly: over a see-through picture the window simply is not told
+        // where the pointer is. See pollHover().
+        hoverPoll = new Timer(HOVER_POLL_MS, e -> pollHover());
+        hoverPoll.setInitialDelay(0);
+        String tracePath = System.getProperty("dstokencheck.trace.hover", "");
+        hoverTracePath = tracePath.isEmpty() ? null : tracePath;
 
         // Safety net for the cases that raise no activation event (taskbar previews, shell flyouts).
         // One SetWindowPos per second is negligible and cannot steal focus.
@@ -934,6 +951,9 @@ public class BalanceBoard extends JFrame {
         accountLabel.setText(currentKeyLabel());
         refreshAnchorAt = System.currentTimeMillis();
         refreshTimer.start();
+        if (!hoverPoll.isRunning()) {
+            hoverPoll.start();
+        }
         applyAlwaysOnTop(isAlwaysOnTop());
         updateCountdown();
     }
@@ -1202,14 +1222,46 @@ public class BalanceBoard extends JFrame {
      */
     private void updateBalanceHover(MouseEvent me) {
         Rectangle area = balanceAreaOnScreen();
-        setBalanceHovered(area != null && area.contains(me.getXOnScreen(), me.getYOnScreen()));
+        boolean hovered = area != null && area.contains(me.getXOnScreen(), me.getYOnScreen());
+        traceHover(me.getXOnScreen(), me.getYOnScreen(), area, hovered);
+        setBalanceHovered(hovered);
+    }
+
+    /**
+     * Appends the hover decision to the file named by {@code dstokencheck.trace.hover}.
+     *
+     * <p>A test seam, and a necessary one: the widget is translucent, so a screen capture of it
+     * contains whatever is behind it and cannot be trusted to say whether the swap happened.
+     */
+    private void traceHover(int screenX, int screenY, Rectangle area, boolean hovered) {
+        if (hoverTracePath == null) {
+            return;
+        }
+        String path = hoverTracePath;
+        try {
+            StringBuilder line = new StringBuilder();
+            line.append(System.currentTimeMillis()).append(" pointer=").append(screenX).append(',').append(screenY);
+            line.append(" area=").append(area == null ? "null"
+                    : area.x + "," + area.y + " " + area.width + "x" + area.height);
+            line.append(" inside=").append(hovered);
+            line.append(" shape=").append(getShape() == null ? "none" : "set");
+            java.io.FileWriter w = new java.io.FileWriter(path, true);
+            try {
+                w.write(line.append(System.lineSeparator()).toString());
+            } finally {
+                w.close();
+            }
+        } catch (Exception ignored) {
+            // Diagnostics must never break the widget.
+        }
     }
 
     /**
      * Re-answers the hover question from the pointer's current position.
      *
-     * <p>Moving or resizing the window can carry the balance out from under a pointer that never
-     * moved, and no motion event is coming to say so.
+     * <p>Two things move the balance without the pointer moving: the window itself (drag, resize,
+     * and a preset that resizes it), and nothing at all — but no motion event is coming either way.
+     * So this is also called on a timer; see {@link #pollHover()}.
      */
     private void refreshHoverFromPointer() {
         if (dragging) {
@@ -1222,7 +1274,38 @@ public class BalanceBoard extends JFrame {
             return;
         }
         Rectangle area = balanceAreaOnScreen();
-        setBalanceHovered(area != null && area.contains(pointer.x, pointer.y));
+        boolean hovered = area != null && area.contains(pointer.x, pointer.y);
+        traceHover(pointer.x, pointer.y, area, hovered);
+        if (hovered != balanceHovered) {
+            setBalanceHovered(hovered);
+            // The hand cursor comes from the same answer, and it is just as blind to a pointer that
+            // no event announced. Edge resizes are decided by the events themselves.
+            if (!dragging) {
+                applyCursor(NONE);
+            }
+        } else if (hovered && System.currentTimeMillis() - hoveredAt > HOVER_REFRESH_MS) {
+            // Sitting still across a tariff boundary: the line has to catch up on its own.
+            setBalanceHovered(true);
+        }
+    }
+
+    /**
+     * Polls the pointer.
+     *
+     * <p>This is not belt-and-braces, it is the fix for a real hole: with a see-through picture the
+     * window goes on the per-pixel translucent path, and Windows hit-tests such a window by its
+     * alpha — so wherever the picture is transparent the pointer is passed to whatever is behind
+     * and this window is never told anything. A framed balance area over empty canvas therefore
+     * never lit up, which looked like "you have to hit the digits".
+     */
+    private void pollHover() {
+        // Only while the window is really on a screen: an off-screen board is not something the
+        // pointer can be over, and --selftest parks its boards off-screen while it drives the swap
+        // by hand. Without this the poll would immediately undo what the test just asked for.
+        if (!isShowing() || !isOnScreen(getBounds())) {
+            return;
+        }
+        refreshHoverFromPointer();
     }
 
     /**

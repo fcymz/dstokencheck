@@ -102,7 +102,7 @@ public class BalanceBoard extends JFrame {
     /** Dimmer than the figure on purpose: a hint, not something to confuse with the balance. */
     private static final int HINT_ALPHA = 180;
     /** Slack around the balance's hit area, in pixels. */
-    private static final int HOVER_SLACK = 4;
+    private static final int HOVER_SLACK = 6;
     private static final float F_SMALL = 10.5f;
     private static final float FONT_SCALE_STEP = 0.05f;
 
@@ -252,6 +252,14 @@ public class BalanceBoard extends JFrame {
             @Override
             public void componentResized(java.awt.event.ComponentEvent e) {
                 applyShape();
+                // The balance can slide out from under a pointer that never moved, so the answer has
+                // to be worked out again from where the pointer actually is.
+                refreshHoverFromPointer();
+            }
+
+            @Override
+            public void componentMoved(java.awt.event.ComponentEvent e) {
+                refreshHoverFromPointer();
             }
         });
 
@@ -1198,6 +1206,26 @@ public class BalanceBoard extends JFrame {
     }
 
     /**
+     * Re-answers the hover question from the pointer's current position.
+     *
+     * <p>Moving or resizing the window can carry the balance out from under a pointer that never
+     * moved, and no motion event is coming to say so.
+     */
+    private void refreshHoverFromPointer() {
+        if (dragging) {
+            // Mid-drag the pointer is usually on the title bar; leave the display alone until the
+            // drag ends and real motion events arrive again.
+            return;
+        }
+        Point pointer = MouseInfo.getPointerInfo() == null ? null : MouseInfo.getPointerInfo().getLocation();
+        if (pointer == null) {
+            return;
+        }
+        Rectangle area = balanceAreaOnScreen();
+        setBalanceHovered(area != null && area.contains(pointer.x, pointer.y));
+    }
+
+    /**
      * Where the balance is on screen: the framed box over a picture, the whole balance block
      * otherwise.
      *
@@ -1205,8 +1233,15 @@ public class BalanceBoard extends JFrame {
      * extra rows, not with the amount label's own bounds — the label is only as wide as the digits,
      * and making people hit the glyphs to see the tariff is a game of darts.
      *
+     * <p>Public so {@code --selftest} and the live pointer harness can check the area they are
+     * aiming at instead of guessing where the text ended up.
+     *
      * @return the hit area in screen coordinates, or null when it cannot be resolved yet
      */
+    public Rectangle balanceHitArea() {
+        return balanceAreaOnScreen();
+    }
+
     private Rectangle balanceAreaOnScreen() {
         Rectangle local;
         Component origin;

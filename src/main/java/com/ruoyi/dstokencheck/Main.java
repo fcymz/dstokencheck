@@ -1857,6 +1857,7 @@ public final class Main {
 
         // A picture layout paints the balance itself, so the swap is checked by pixels there.
         boolean pictureLayout = false;
+        boolean hitAreaCoversFrame = false;
         java.io.File source = new java.io.File(AppConfig.directory(), "selftest-hover.png");
         try {
             writeTestImage(source, 300, 150, new java.awt.Color(0x30, 0x30, 0x30));
@@ -1880,6 +1881,24 @@ public final class Main {
                 }
             });
             Thread.sleep(700);
+
+            // The pointer has to trigger anywhere in the framed range, not only on the digits: the
+            // fixture's image covers the window exactly, so the frame sits at the region's fractions
+            // of the window, and a point near its top-left corner is well clear of the centred text.
+            Rectangle window = ref[0].getBounds();
+            Rectangle hit = ref[0].balanceHitArea();
+            if (hit != null) {
+                Rectangle local = new Rectangle(hit.x - window.x, hit.y - window.y, hit.width, hit.height);
+                int fx = Math.round(window.width * 0.2f);
+                int fy = Math.round(window.height * 0.35f);
+                int fw = Math.round(window.width * 0.6f);
+                int fh = Math.round(window.height * 0.3f);
+                boolean corners = local.contains(fx, fy) && local.contains(fx + fw - 1, fy)
+                        && local.contains(fx, fy + fh - 1) && local.contains(fx + fw - 1, fy + fh - 1);
+                boolean offTheDigits = local.contains(fx + Math.max(2, fw / 12), fy + Math.max(2, fh / 6));
+                hitAreaCoversFrame = corners && offTheDigits;
+            }
+
             // Nothing is hovered unless it is asked for: the pointer watcher wants a moving mouse.
             // Both halves of the rule are forced here, because whichever one the wall clock is in,
             // the other one is the branch nobody would ever test.
@@ -1901,7 +1920,8 @@ public final class Main {
             Thread.sleep(500);
             int idleGreen = countColour(ref[0], Theme.GOOD);
             int idleRed = countColour(ref[0], Theme.DANGER);
-            pictureLayout = peakRed > 0 && peakGreen == 0 && idleGreen > 0 && idleRed == 0;
+            pictureLayout = peakRed > 0 && peakGreen == 0 && idleGreen > 0 && idleRed == 0
+                    && hitAreaCoversFrame;
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
                 public void run() {
@@ -1925,7 +1945,8 @@ public final class Main {
                 + " (\u65f6\u6bb5\u89c4\u5219=" + rule
                 + ", \u4eca\u65e5\u7528\u91cf=\u57fa\u51c6/\u6d88\u8017/\u5145\u503c/\u518d\u6d88\u8017/\u6362\u5e01\u79cd=" + usage
                 + ", \u5361\u7247\u5e03\u5c40\u6587\u5b57\u4e0e\u989c\u8272=" + cardLayout
-                + ", \u80cc\u666f\u56fe\u5e03\u5c40\u6309\u50cf\u7d20=" + pictureLayout + ")");
+                + ", \u80cc\u666f\u56fe\u5e03\u5c40\u6309\u50cf\u7d20=" + pictureLayout
+                + ", \u547d\u4e2d\u533a\u57df=\u6574\u4e2a\u6846\u5b9a\u8303\u56f4=" + hitAreaCoversFrame + ")");
         return ok;
     }
 

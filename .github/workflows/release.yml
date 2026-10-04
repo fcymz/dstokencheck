@@ -1,7 +1,9 @@
 name: Release
 
-# Builds the jar and publishes it as a GitHub Release asset, so a fresh machine
-# can download dstokencheck.jar + run.bat and just double-click.
+# Publishes a version tag as a GitHub Release:
+#   * the ubuntu job builds dstokencheck.jar (Maven) and attaches it with run.bat
+#   * the windows job then wraps that same jar, plus a bundled Java runtime, into the
+#     one-click installer and attaches it too
 #
 # Trigger: push a version tag, e.g.
 #     git tag v1.0.0 && git push origin v1.0.0
@@ -41,4 +43,49 @@ jobs:
             target/dstokencheck.jar
             run.bat
           generate_release_notes: true
+          fail_on_unmatched_files: true
+
+  installer:
+    # After the release exists: the installer bundles the very jar the release ships, so it has to
+    # be downloadable first.
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Fetch the Java runtime the installer bundles
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Invoke-WebRequest "https://api.adoptium.net/v3/binary/latest/8/ga/windows/x64/jre/hotspot/normal/eclipse" `
+            -OutFile build\temurin8-jre.zip
+          Expand-Archive build\temurin8-jre.zip -DestinationPath build\jre-extract -Force
+          $inner = Get-ChildItem build\jre-extract -Directory | Select-Object -First 1
+          Move-Item $inner.FullName build\runtime8
+
+      - name: Fetch the jar this release published
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build\downloaded | Out-Null
+          Invoke-WebRequest "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/dstokencheck.jar" `
+            -OutFile build\downloaded\dstokencheck.jar
+          Get-Item build\downloaded\dstokencheck.jar | Select-Object Length
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          .\tools\installer\build-installer.ps1 -Version $version -JarPath build\downloaded\dstokencheck.jar -Jdk $env:JAVA_HOME
+
+      - name: Attach it to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/dstokencheck-*-setup.exe
           fail_on_unmatched_files: true

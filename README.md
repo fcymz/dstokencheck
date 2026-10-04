@@ -49,13 +49,19 @@
 | 用途 | 要求 |
 | --- | --- |
 | 运行（下载预编译版本） | Java 8 或更高版本（[下载](https://adoptium.net/)） |
+| 运行（运行安装包） | **无需 Java**（安装包内自带 Temurin 8）；仅 Windows |
 | 运行（从源码构建） | 同上 |
 | 构建 | JDK 8 或更高版本、Maven 3.x |
+| 打包安装包（可选） | Windows + JDK 8；用系统自带的 C# 编译器，无需 NSIS / Inno Setup |
 | 系统 | Windows（开机自启依赖注册表，其余功能跨平台可用） |
 
 编译目标为 Java 8（class 版本 52），更高版本的 JRE 亦可运行。
 
 ## 运行方式
+
+三种方式装的是同一个程序，界面与配置完全一致，按手头条件挑一个即可。
+
+> 目标机器上**没有 Java**、或者不想手动摆弄文件：直接看**方式三**（安装包），装完从开始菜单启动。
 
 ### 方式一：下载预编译版本
 
@@ -85,6 +91,25 @@ java -jar target\dstokencheck.jar
 
 1. `target\dstokencheck.jar`（本地构建产物）
 2. 与 `run.bat` 同目录的 `dstokencheck.jar`（从 Releases 下载）
+
+### 方式三：运行安装包（装好即用，不需要预装 Java）
+
+1. 打开 [Releases 页面](https://github.com/fcymz/dstokencheck/releases)，下载最新版的
+   `dstokencheck-<版本>-setup.exe`（例如 `dstokencheck-1.1.5-setup.exe`）。
+2. 双击运行。安装界面可以改安装位置（默认 `C:\Program Files\dstokencheck`），
+   还能勾选是否创建桌面快捷方式、装完是否立即启动。
+3. 装完从**开始菜单**（或桌面快捷方式）启动，使用方式与方式一完全相同。
+
+安装包**自带 Temurin 8 运行环境**，目标机器无需预先安装 Java，因此体积约 47 MB。
+
+- 装到 `C:\Program Files` 下会请求一次管理员权限（UAC）；装到用户自己有写权限的目录
+  （例如 `%LOCALAPPDATA%\Programs\dstokencheck`）则完全不提权。
+- 快捷方式指向包内自带的 `runtime\bin\javaw.exe`，所以不会因为日后升级系统上的 Java 而失效。
+- **卸载**：走 Windows 的「设置 → 应用」，或运行安装目录里的卸载入口。
+  卸载时会问一次是否连设置一起删除，默认保留 `%USERPROFILE%\.dstokencheck`
+  （设置、背景图、预设），重装后能接着用。
+- **开机自启**同样可用：用安装后的快捷方式启动一次，再在右键菜单里打开即可。
+- 安装包**没有代码签名**，首次运行 Windows 可能提示「未知发布者」。
 
 ## 使用方法
 
@@ -283,7 +308,7 @@ java -jar target\dstokencheck.jar
 
 右键菜单勾选「开机自启」即可开启，取消勾选即关闭。
 
-- **须以 `run.bat` 或 `java -jar dstokencheck.jar` 方式启动后才能设置。**
+- **须以 `run.bat`、`java -jar dstokencheck.jar` 或安装后的快捷方式启动后才能设置。**
   在 IDE 中直接运行的是 `target\classes` 目录而非 jar，程序无法确定需注册的路径；
   此时点击菜单项会弹出说明，不会写入无效项。
 - 开启时会把 jar 复制到稳定位置 `%LOCALAPPDATA%\dstokencheck\dstokencheck.jar`，
@@ -484,12 +509,33 @@ tools/                            开发期工具，不影响程序运行
 ├── menu-preset.png               预设配置子菜单
 ├── background-dialog.png         背景图设置窗口渲染效果
 ├── background-crop.png           矩形裁剪模式的渲染效果
-└── background-free.png           自由裁剪（手绘轮廓）模式的渲染效果
+├── background-free.png           自由裁剪（手绘轮廓）模式的渲染效果
+└── installer/                    打 Windows 安装包的工具（见下）
+    ├── README.md                 怎么生成、测试安装包
+    ├── build-installer.ps1       编译 jar → 装 JRE → 用 csc 打包成 setup.exe
+    ├── test-installer.ps1        真的跑一遍 setup.exe，检查装/卸结果
+    ├── setup.cs                  自解压引导程序（把载荷内嵌进 exe）
+    ├── install.ps1               安装界面与落地逻辑
+    ├── uninstall.ps1             卸载逻辑
+    ├── make-icon.py              用应用自己的配色生成图标（Pillow）
+    └── app.ico                   安装包与快捷方式用的图标
 ```
 
 开发期工具不会读写真实配置：`capture-window.ps1` 与 `window-timeline.ps1` 会将
 `user.home` 指向 `%TEMP%` 下的临时目录后再启动程序。`SecretProbe.java` 读写的是
 `user.home`，运行时请自行加上 `-Duser.home=%TEMP%\probe` 隔离。
+
+安装包工具（`tools/installer/`）用一条命令生成 `dist\dstokencheck-<版本>-setup.exe`：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\build-installer.ps1 -Version 1.1.5
+```
+
+它只用系统自带的东西：JDK 8 编译 jar，Windows 自带的 C# 编译器（`csc.exe`）把 jar 与
+Temurin 8 运行时打包进一个自解压 exe，不依赖 NSIS / Inno Setup。
+
+打标签时 CI 会自动做同样的事：`release.yml` 里 ubuntu 作业发布 jar 与 `run.bat`，
+随后 windows 作业**下载刚发布的那个 jar**、配上运行时打成安装包，附到同一个 Release 上。
 
 ## 已知限制
 
@@ -505,3 +551,5 @@ tools/                            开发期工具，不影响程序运行
   若系统不支持窗口透明，透明区域会退化为深色，并在图片上留一行提示。
 - 自由裁剪的轮廓只能整体移动、等比缩放或重新画：不支持单独拖动某一个顶点。
   轮廓顶点上限 96 个，手绘轨迹会自动简化到远低于这个数，保证窗口移动时不卡。
+- 安装包（方式三）只提供 Windows 版，且**没有代码签名**：首次运行可能被 SmartScreen 提示
+  「未知发布者」。它自带 Java 运行环境，所以体积约 47 MB，其中绝大部分是运行时。

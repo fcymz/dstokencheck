@@ -1,0 +1,6 @@
+# Build products of build-installer.ps1 — regenerated every run, never committed.
+payload/
+payload.zip
+setup-stage/
+uninstall-stage/
+*.sed

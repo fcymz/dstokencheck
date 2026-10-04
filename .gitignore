@@ -47,3 +47,12 @@ startup.log
 secrets.properties
 secrets.txt
 *.key
+
+# ------------------------------------------------- code signing: keys never get committed
+# A .pfx/.p12 is the private key itself; leaking one means anyone can sign as this project.
+# The public .cer is harmless, but keeping the whole family out removes the chance of a slip.
+*.pfx
+*.p12
+*.pvk
+*.snk
+*.cer

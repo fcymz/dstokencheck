@@ -13,7 +13,13 @@ param(
     [string]$Jdk = "C:\Program Files\Java\jdk1.8.0_181",
     [string]$Runtime = "",
     [string]$JarPath = "",
-    [switch]$SkipJar
+    [switch]$SkipJar,
+    # Optional code signing. Without these the installer is unsigned, and Windows shows
+    # "未知发布者" — see sign-installer.ps1 and README.md for which certificate actually helps.
+    [string]$SignPfx = "",
+    [string]$SignPassword = "",
+    [string]$SignThumbprint = "",
+    [string]$TimestampUrl = "http://timestamp.digicert.com"
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,6 +127,23 @@ foreach ($arg in @(
 & $csc $cscArgs
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $setupExe)) { throw "csc failed" }
 
+# ---------------------------------------------------------------- 5. optional signing
+
+if (-not [string]::IsNullOrWhiteSpace($SignPfx) -or -not [string]::IsNullOrWhiteSpace($SignThumbprint)) {
+    Step "Signing the installer"
+    $signArgs = @{ Setup = $setupExe }
+    if (-not [string]::IsNullOrWhiteSpace($SignPfx)) {
+        $signArgs.Pfx = $SignPfx
+        $signArgs.Password = $SignPassword
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SignThumbprint)) { $signArgs.Thumbprint = $SignThumbprint }
+    if (-not [string]::IsNullOrWhiteSpace($TimestampUrl)) { $signArgs.TimestampUrl = $TimestampUrl }
+    & (Join-Path $here "sign-installer.ps1") @signArgs
+} else {
+    "    (not signed: pass -SignPfx or -SignThumbprint to sign it)"
+}
+
+# Signed afterwards, so the hash describes the file that actually ships.
 $size = (Get-Item $setupExe).Length
 $hash = (Get-FileHash $setupExe -Algorithm SHA256).Hash
 ""

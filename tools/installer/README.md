@@ -45,7 +45,68 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\installer\test-install
 > 注意：某些受限环境（例如沙箱里的会话）不允许从工作目录启动的进程写 `%TEMP%`、
 > 开始菜单或 HKCU，这两个检查在那里会失败；这不是安装包的问题，换到普通桌面会话即可。
 
+## 代码签名（登记发布者）
+
+未签名的安装包在 Windows 上会显示「未知发布者」，而且**很可能被 Defender 直接拦下**。
+本项目 v1.1.5 的安装包就被判定为 `Trojan:Win32/Sabsik.FL.A!ml` —— 结尾的 `!ml` 表示这是
+机器学习启发式的判断，属于**误报**（自解压包 + 内嵌运行时是很常见的触发特征）。
+
+签名只签**安装包本身**（`setup.exe`）。jar 不需要签：Java 用 `-jar` 运行时不校验 jar 签名；
+包内的 `javaw.exe` 是 Temurin 自己的、本来就有 Eclipse Adoptium 的签名。
+
+### 先看清楚：哪种证书才真的有用
+
+| 方案 | 费用 | 效果 |
+| --- | --- | --- |
+| **不签** | 免费 | SmartScreen 强拦截；本项目的实测是被 Defender 判为木马误报 |
+| **自签名** | 免费 | 只在**信任该证书的机器**上才算发布者（自己的机器、或公司用组策略统一部署）。对公众不仅没用，还可能更糟 |
+| **OV 证书**（DigiCert / Sectigo 等） | 约 $150–300/年 | 面向所有人显示发布者；SmartScreen 声誉**逐步积累**（新文件仍可能先被提示）。2023 年 6 月起私钥必须放在硬件令牌或云 HSM 里 |
+| **SignPath Foundation**（开源项目） | **免费** | 走他们的受管流水线做 OV 级签名。开源项目可以申请：<https://signpath.io> |
+| **Azure Artifact Signing**（原 Trusted Signing） | 约 $9.99/月 | 便宜且适合 CI，但**个人开发者目前只限美国与加拿大**（组织限美/加/欧/英），中国大陆的个人开发者用不了 |
+| **EV 证书** | $400+/年 | **2024 年起不再即时免除 SmartScreen**，与 OV 走同样的声誉积累，为绕警告而买 EV 已不划算 |
+
+来源：微软官方文档 [Code signing options for Windows app developers](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options)
+与 [SmartScreen reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)。
+
+### 怎么签
+
+```powershell
+# 已有 .pfx（例如 CA 签发的证书导出文件）
+.\tools\installer\sign-installer.ps1 -Setup dist\dstokencheck-1.1.5-setup.exe -Pfx mycert.pfx -Password 口令
+
+# 证书已在证书库里（CurrentUser\My），按指纹或主题找
+.\tools\installer\sign-installer.ps1 -Setup dist\dstokencheck-1.1.5-setup.exe -Thumbprint <指纹>
+
+# 生成一张自签名证书试用（仅用于自己的机器 / 验证流程）
+.\tools\installer\sign-installer.ps1 -Setup dist\dstokencheck-1.1.5-setup.exe -SelfSigned -PublisherName fcymz
+```
+
+打包时直接签，一步到位：
+
+```powershell
+.\tools\installer\build-installer.ps1 -Version 1.1.5 -SignPfx mycert.pfx -SignPassword 口令
+```
+
+脚本默认加 DigiCert 时间戳（`-TimestampUrl` 可换）；签名会改变文件字节，所以最终打印的
+SHA256 是**签名之后**的。脚本最后会把 `Get-AuthenticodeSignature` 的结果打出来 —— 自签名会显示
+`UnknownError`（"terminated in a root certificate which is not trusted"），这正是它只对受信机器有效的含义。
+
+证书**不要提交进仓库**（`.gitignore` 已忽略 `*.pfx`）。CI 里签名的话，把 pfx 以 base64 存成
+GitHub Secret，在 `release.yml` 的 installer 作业里解码后加上 `-SignPfx` 即可。
+
+### 被 Defender 误报怎么办
+
+签名能降低概率，但**误报的正规解法是向微软提交复审**（免费，通常一两天内处理）：
+
+1. 打开 <https://www.microsoft.com/en-us/wdsi/filesubmission>
+2. 选 **Software developer** → 填被误报的文件（用 Release 里的 `dstokencheck-1.1.5-setup.exe`）
+3. 检测名填 `Trojan:Win32/Sabsik.FL.A!ml`，说明这是自己开发的开源 Java 桌面小工具的自解压安装包，
+   包内是自己的程序与 Temurin 的 JRE
+4. 提交后按邮件里的链接跟踪状态；确认是误报后微软会更新特征库
+
+用户侧的临时办法：Defender 的隔离记录里选「允许」，或在「病毒和威胁防护 → 排除项」里加该文件。
+
 ## 已知限制
 
-- 安装包**没有代码签名**，首次运行 Windows 可能提示「未知发布者」。要消掉需要一张代码签名证书。
 - 体积几乎全在 JRE 上（应用本体只有 5.7 MB）；如需更小，可以换用 `jlink` 精简过的运行时。
+- 安装包目前**没有代码签名**：见上节，需要一张 OV 证书（或申请免费的 SignPath 开源签名）。

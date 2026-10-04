@@ -17,12 +17,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+# Everything is found relative to this script, so the same file works from tools\installer (where it
+# lives in the repository, and where CI runs it) and from a scratch copy under build\.
+$here = $PSScriptRoot
+$root = Split-Path -Parent (Split-Path -Parent $here)
 if (-not (Test-Path (Join-Path $root "pom.xml"))) { $root = (Get-Location).Path }
-$here = Join-Path $root "build\installer"
 $payloadDir = Join-Path $here "payload"
 $dist = Join-Path $root "dist"
 if ([string]::IsNullOrWhiteSpace($Runtime)) { $Runtime = Join-Path $root "build\runtime8" }
+
+"==> PowerShell $($PSVersionTable.PSVersion) on $([System.Environment]::OSVersion.VersionString)"
+"==> script folder: $here"
+"==> repository   : $root"
 
 function Step([string]$text) { Write-Output "==> $text" }
 
@@ -65,7 +71,8 @@ if (-not (Test-Path (Join-Path $payloadDir "runtime\bin\javaw.exe"))) { throw "t
 
 $payloadZip = Join-Path $here "payload.zip"
 Remove-Item -Force $payloadZip -ErrorAction SilentlyContinue
-Add-Type -AssemblyName System.IO.Compression.FileSystem
+# PowerShell 7 already has the assembly loaded and Add-Type then throws; PowerShell 5 needs it.
+try { Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop } catch { }
 [System.IO.Compression.ZipFile]::CreateFromDirectory(
     $payloadDir, $payloadZip, [System.IO.Compression.CompressionLevel]::Fastest, $false)
 "    payload.zip: $([math]::Round((Get-Item $payloadZip).Length/1MB,2)) MB"

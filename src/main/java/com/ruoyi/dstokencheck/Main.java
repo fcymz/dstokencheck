@@ -294,14 +294,14 @@ public final class Main {
             Thread.sleep(400);
             Rectangle r1 = b.getBounds();
             pass[0] = r1.width > r0.width && r1.height > r0.height;
-            System.out.println((pass[0] ? "PASS" : "FAIL") + "  \u53f3\u4e0b\u89d2\u62d6\u62fd\u7f29\u653e: "
+            System.out.println((pass[0] ? "PASS" : "FAIL") + "  右下角拖拽缩放: "
                     + r0.width + "x" + r0.height + " -> " + r1.width + "x" + r1.height);
 
             drag(b, new Point(r1.x + r1.width / 2, r1.y + r1.height / 2), 50, 30);
             Thread.sleep(400);
             Rectangle r2 = b.getBounds();
             pass[1] = r2.x == r1.x + 50 && r2.y == r1.y + 30;
-            System.out.println((pass[1] ? "PASS" : "FAIL") + "  \u7a7a\u767d\u5904\u62d6\u52a8\u79fb\u52a8: ("
+            System.out.println((pass[1] ? "PASS" : "FAIL") + "  空白处拖动移动: ("
                     + r1.x + "," + r1.y + ") -> (" + r2.x + "," + r2.y + ")");
 
             drag(b, new Point(r2.x + r2.width - 2, r2.y + r2.height - 2), -2000, -2000);
@@ -309,15 +309,15 @@ public final class Main {
             Rectangle r3 = b.getBounds();
             Dimension limit = b.getMinimumSize();
             pass[2] = r3.width >= limit.width && r3.height >= limit.height;
-            System.out.println((pass[2] ? "PASS" : "FAIL") + "  \u6700\u5c0f\u5c3a\u5bf8\u9650\u5236: "
-                    + r3.width + "x" + r3.height + " (\u4e0b\u9650 "
+            System.out.println((pass[2] ? "PASS" : "FAIL") + "  最小尺寸限制: "
+                    + r3.width + "x" + r3.height + " (下限 "
                     + limit.width + "x" + limit.height + ")");
 
             // The 退出登录 entry must exist in the right-click menu and actually fire its callback.
             JPopupMenu menu = (b.getContentPane() instanceof javax.swing.JComponent)
                     ? ((javax.swing.JComponent) b.getContentPane()).getComponentPopupMenu()
                     : null;
-            JMenuItem logoutItem = findMenuItem(menu, "\u9000\u51fa\u767b\u5f55");
+            JMenuItem logoutItem = findMenuItem(menu, "退出登录");
             pass[3] = logoutItem != null;
             if (pass[3]) {
                 final JMenuItem item = logoutItem;
@@ -331,18 +331,18 @@ public final class Main {
                 pass[3] = logoutFired[0];
             }
             System.out.println((pass[3] ? "PASS" : "FAIL")
-                    + "  \u53f3\u952e\u83dc\u5355\u300c\u9000\u51fa\u767b\u5f55\u300d\u5b58\u5728\u4e14\u56de\u8c03\u751f\u6548");
+                    + "  右键菜单「退出登录」存在且回调生效");
 
             // 开机自启 must be clickable whenever the platform supports it. It used to be disabled
             // outright when the jar path could not be determined (running from an IDE), which left
             // an unexplained grey entry the user could not tick.
-            JMenuItem autoStartItem = findMenuItem(menu, "\u5f00\u673a\u81ea\u542f");
+            JMenuItem autoStartItem = findMenuItem(menu, "开机自启");
             boolean commandAvailable = AutoStart.buildCommand() != null;
             pass[4] = autoStartItem != null && autoStartItem.isEnabled() == AutoStart.isSupported();
             System.out.println((pass[4] ? "PASS" : "FAIL")
-                    + "  \u53f3\u952e\u83dc\u5355\u300c\u5f00\u673a\u81ea\u542f\u300d\u53ef\u70b9\u51fb"
-                    + " (\u53ef\u5199\u5165\u6ce8\u5f00\u8868=" + commandAvailable
-                    + ", \u8fd0\u884c\u65b9\u5f0f=" + (commandAvailable ? "jar" : "IDE/classes") + ")");
+                    + "  右键菜单「开机自启」可点击"
+                    + " (可写入注开表=" + commandAvailable
+                    + ", 运行方式=" + (commandAvailable ? "jar" : "IDE/classes") + ")");
 
             // The context menu must open in its own window AND a press on one of its items must not
             // be taken for a window drag. With a lightweight popup both fail: the menu is clipped by
@@ -419,7 +419,7 @@ public final class Main {
         java.awt.Window popupWindow = SwingUtilities.getWindowAncestor(popup);
         boolean ownWindow = popup.isVisible() && popupWindow != null && popupWindow != board;
 
-        JMenuItem refreshItem = findMenuItem(menu, "\u7acb\u5373\u5237\u65b0");
+        JMenuItem refreshItem = findMenuItem(menu, "立即刷新");
         Rectangle before = board.getBounds();
         if (refreshItem != null) {
             pressAndNudge(refreshItem, 10, 8);
@@ -436,8 +436,8 @@ public final class Main {
 
         boolean ok = ownWindow && stayedPut && refreshItem != null;
         System.out.println((ok ? "PASS" : "FAIL")
-                + "  \u83dc\u5355\u72ec\u7acb\u7a97\u53e3=" + ownWindow
-                + "\uff0c\u70b9\u51fb\u83dc\u5355\u9879\u4e0d\u62d6\u52a8\u7a97\u53e3=" + stayedPut);
+                + "  菜单独立窗口=" + ownWindow
+                + "，点击菜单项不拖动窗口=" + stayedPut);
         return ok;
     }
 
@@ -468,7 +468,7 @@ public final class Main {
     private static boolean checkLauncherIsAsciiOnly() {
         java.io.File launcher = locateProjectFile("run.bat");
         if (launcher == null) {
-            System.out.println("SKIP  \u672a\u627e\u5230 run.bat\uff0c\u8df3\u8fc7\u7f16\u7801\u68c0\u67e5");
+            System.out.println("SKIP  未找到 run.bat，跳过编码检查");
             return true;
         }
         try {
@@ -480,11 +480,11 @@ public final class Main {
                 }
             }
             boolean ok = nonAscii == 0;
-            System.out.println((ok ? "PASS" : "FAIL") + "  run.bat \u4ec5\u542b ASCII\u5b57\u7b26"
-                    + " (\u975e ASCII \u5b57\u8282\u6570=" + nonAscii + ")");
+            System.out.println((ok ? "PASS" : "FAIL") + "  run.bat 仅含 ASCII字符"
+                    + " (非 ASCII 字节数=" + nonAscii + ")");
             return ok;
         } catch (Exception e) {
-            System.out.println("FAIL  \u65e0\u6cd5\u8bfb\u53d6 run.bat: " + e.getMessage());
+            System.out.println("FAIL  无法读取 run.bat: " + e.getMessage());
             return false;
         }
     }
@@ -547,15 +547,15 @@ public final class Main {
      * (which is derived from the font scale), and picking 100% must put it back.
      */
     private static boolean checkFontScaleMenu(final BalanceBoard board, JPopupMenu menu) throws Exception {
-        javax.swing.JMenu fontMenu = findSubMenu(menu, "\u5b57\u4f53\u5927\u5c0f");
+        javax.swing.JMenu fontMenu = findSubMenu(menu, "字体大小");
         if (fontMenu == null) {
-            System.out.println("FAIL  \u627e\u4e0d\u5230\u300c\u5b57\u4f53\u5927\u5c0f\u300d\u5b50\u83dc\u5355");
+            System.out.println("FAIL  找不到「字体大小」子菜单");
             return false;
         }
         JMenuItem large = findMenuItem(fontMenu, "200%");
         JMenuItem normal = findMenuItem(fontMenu, "100%");
         if (large == null || normal == null) {
-            System.out.println("FAIL  \u5b57\u4f53\u5b50\u83dc\u5355\u7f3a\u5c11 100%/200% \u9884\u8bbe");
+            System.out.println("FAIL  字体子菜单缺少 100%/200% 预设");
             return false;
         }
 
@@ -571,7 +571,7 @@ public final class Main {
         boolean ok = enlarged.width > before.width
                 && enlarged.height > before.height
                 && Math.abs(restored.width - before.width) <= 1;
-        System.out.println((ok ? "PASS" : "FAIL") + "  \u5b57\u4f53\u5927\u5c0f\u53ef\u8c03: \u4e0b\u9650 "
+        System.out.println((ok ? "PASS" : "FAIL") + "  字体大小可调: 下限 "
                 + before.width + "x" + before.height + " -> " + enlarged.width + "x" + enlarged.height
                 + " -> " + restored.width + "x" + restored.height);
         return ok;
@@ -591,12 +591,12 @@ public final class Main {
         AppConfig probe = new AppConfig();
         probe.setRefreshSeconds(1);
         boolean clamped = probe.getRefreshSeconds() == 5;
-        boolean menuHas5 = findMenuItem(menu, "\u6bcf 5 \u79d2\u5237\u65b0") != null;
+        boolean menuHas5 = findMenuItem(menu, "每 5 秒刷新") != null;
         boolean ok = AppConfig.MIN_REFRESH_SECONDS == 5 && clamped && menuHas5;
-        System.out.println((ok ? "PASS" : "FAIL") + "  \u6700\u4f4e\u5237\u65b0\u5468\u671f=5\u79d2"
-                + " (\u9650\u5236=" + AppConfig.MIN_REFRESH_SECONDS
-                + ", \u4f20\u5165 1 \u79d2\u540e\u5f97\u5230=" + probe.getRefreshSeconds()
-                + ", \u83dc\u5355\u9879=" + menuHas5 + ")");
+        System.out.println((ok ? "PASS" : "FAIL") + "  最低刷新周期=5秒"
+                + " (限制=" + AppConfig.MIN_REFRESH_SECONDS
+                + ", 传入 1 秒后得到=" + probe.getRefreshSeconds()
+                + ", 菜单项=" + menuHas5 + ")");
         return ok;
     }
 
@@ -652,14 +652,14 @@ public final class Main {
                     && (copy == null || !copy.exists());
 
             boolean ok = roundTrip && inside && fullFrameDropped && removed;
-            System.out.println((ok ? "PASS" : "FAIL") + "  \u80cc\u666f\u56fe\u8bbe\u7f6e"
-                    + " (\u4fdd\u5b58/\u8bfb\u56de=" + roundTrip
-                    + ", \u8d8a\u754c\u533a\u57df\u88ab\u6536\u56de=" + inside
-                    + ", \u5168\u5e45\u88c1\u526a\u4e0d\u5199\u76d8=" + fullFrameDropped
-                    + ", \u5220\u9664\u540e\u65e0\u6b8b\u7559=" + removed + ")");
+            System.out.println((ok ? "PASS" : "FAIL") + "  背景图设置"
+                    + " (保存/读回=" + roundTrip
+                    + ", 越界区域被收回=" + inside
+                    + ", 全幅裁剪不写盘=" + fullFrameDropped
+                    + ", 删除后无残留=" + removed + ")");
             return ok;
         } catch (Exception e) {
-            System.out.println("FAIL  \u80cc\u666f\u56fe\u8bbe\u7f6e: " + e);
+            System.out.println("FAIL  背景图设置: " + e);
             return false;
         } finally {
             //noinspection ResultOfMethodCallIgnored
@@ -755,13 +755,13 @@ public final class Main {
             }
 
             boolean ok = bright > 50 && outside == 0;
-            System.out.println((ok ? "PASS" : "FAIL") + "  \u4f59\u989d\u6570\u5b57\u843d\u5728\u6846\u5b9a\u533a\u57df\u5185"
-                    + " (\u533a\u57df=" + x0 + "," + y0 + "-" + x1 + "," + y1
-                    + ", \u4eae\u8272\u50cf\u7d20=" + bright
-                    + ", \u533a\u57df\u5916\u4eae\u8272\u50cf\u7d20=" + outside + ")");
+            System.out.println((ok ? "PASS" : "FAIL") + "  余额数字落在框定区域内"
+                    + " (区域=" + x0 + "," + y0 + "-" + x1 + "," + y1
+                    + ", 亮色像素=" + bright
+                    + ", 区域外亮色像素=" + outside + ")");
             return ok;
         } catch (Exception e) {
-            System.out.println("FAIL  \u4f59\u989d\u6570\u5b57\u843d\u5728\u6846\u5b9a\u533a\u57df\u5185: " + e);
+            System.out.println("FAIL  余额数字落在框定区域内: " + e);
             return false;
         } finally {
             //noinspection ResultOfMethodCallIgnored
@@ -802,7 +802,7 @@ public final class Main {
             });
             Thread.sleep(400);
             javax.swing.AbstractButton save = findButton(opened[0].getContentPane(),
-                    "\u4fdd\u5b58\u5e76\u5e94\u7528");
+                    "保存并应用");
             disabledWithoutImage = save != null && !save.isEnabled();
             SwingUtilities.invokeAndWait(new Runnable() {
                 @Override
@@ -846,7 +846,7 @@ public final class Main {
             }
 
             javax.swing.AbstractButton save2 = findButton(edited[0].getContentPane(),
-                    "\u4fdd\u5b58\u5e76\u5e94\u7528");
+                    "保存并应用");
             if (save2 != null && save2.isEnabled()) {
                 clickOnEdt(save2);
                 Thread.sleep(250);
@@ -872,15 +872,15 @@ public final class Main {
             });
 
             boolean ok = disabledWithoutImage && canvasFound && saved && regionChanged && regionValid;
-            System.out.println((ok ? "PASS" : "FAIL") + "  \u80cc\u666f\u56fe\u7f16\u8f91\u5668"
-                    + " (\u65e0\u56fe\u65f6\u4e0d\u53ef\u4fdd\u5b58=" + disabledWithoutImage
-                    + ", \u627e\u5230\u753b\u5e03=" + canvasFound
-                    + ", \u62d6\u62fd\u540e\u4fdd\u5b58\u6210\u529f=" + saved
-                    + ", \u533a\u57df\u5df2\u6539\u53d8=" + regionChanged
-                    + ", \u533a\u57df\u5408\u6cd5=" + regionValid + ")");
+            System.out.println((ok ? "PASS" : "FAIL") + "  背景图编辑器"
+                    + " (无图时不可保存=" + disabledWithoutImage
+                    + ", 找到画布=" + canvasFound
+                    + ", 拖拽后保存成功=" + saved
+                    + ", 区域已改变=" + regionChanged
+                    + ", 区域合法=" + regionValid + ")");
             return ok;
         } catch (Exception e) {
-            System.out.println("FAIL  \u80cc\u666f\u56fe\u7f16\u8f91\u5668: " + e);
+            System.out.println("FAIL  背景图编辑器: " + e);
             return false;
         } finally {
             //noinspection ResultOfMethodCallIgnored
@@ -892,7 +892,7 @@ public final class Main {
     /** Opens the editor non-modally, so the test keeps control of the event thread. */
     private static BackgroundRegionDialog showEditor(AppConfig config) {
         BackgroundRegionDialog dialog = new BackgroundRegionDialog(null, config,
-                new BackgroundRegionDialog.PreviewData("DeepSeek \u4f59\u989d", "\u00a587.65", "CNY", "", ""));
+                new BackgroundRegionDialog.PreviewData("DeepSeek 余额", "¥87.65", "CNY", "", ""));
         dialog.setModal(false);
         dialog.setVisible(true);
         return dialog;
@@ -1059,19 +1059,19 @@ public final class Main {
             boolean ok = aspectFitted && leftIsGreen && rightIsBlue && noRedOrYellow && aspectKept
                     && squareCorners && cornersArePicture;
             System.out.println((ok ? "PASS" : "FAIL")
-                    + "  \u7a97\u53e3\u8fb9\u7f18\u4e0e\u88c1\u526a\u4e00\u81f4"
-                    + " (\u7a97\u53e3=" + bounds.width + "x" + bounds.height
-                    + " \u6bd4\u4f8b\u5df2\u8ddf\u968f\u88c1\u526a=" + aspectFitted
-                    + ", \u5de6\u8fb9\u7f18\u662f\u88c1\u526a\u5de6\u8fb9=" + leftIsGreen
-                    + ", \u53f3\u8fb9\u7f18\u662f\u88c1\u526a\u53f3\u8fb9=" + rightIsBlue
-                    + ", \u88ab\u88c1\u6389\u7684\u989c\u8272\u672a\u51fa\u73b0=" + noRedOrYellow
-                    + ", \u7f29\u653e\u540e\u4fdd\u6301\u6bd4\u4f8b=" + aspectKept
+                    + "  窗口边缘与裁剪一致"
+                    + " (窗口=" + bounds.width + "x" + bounds.height
+                    + " 比例已跟随裁剪=" + aspectFitted
+                    + ", 左边缘是裁剪左边=" + leftIsGreen
+                    + ", 右边缘是裁剪右边=" + rightIsBlue
+                    + ", 被裁掉的颜色未出现=" + noRedOrYellow
+                    + ", 缩放后保持比例=" + aspectKept
                     + " -> " + resized.width + "x" + resized.height
-                    + ", \u56db\u89d2\u4e0d\u518d\u5706\u89d2=" + squareCorners
-                    + ", \u56db\u89d2\u5c31\u662f\u56fe\u7247=" + cornersArePicture + ")");
+                    + ", 四角不再圆角=" + squareCorners
+                    + ", 四角就是图片=" + cornersArePicture + ")");
             return ok;
         } catch (Exception e) {
-            System.out.println("FAIL  \u7a97\u53e3\u8fb9\u7f18\u4e0e\u88c1\u526a\u4e00\u81f4: " + e);
+            System.out.println("FAIL  窗口边缘与裁剪一致: " + e);
             return false;
         } finally {
             //noinspection ResultOfMethodCallIgnored
@@ -1209,16 +1209,16 @@ public final class Main {
 
             boolean ok = traceSimplified && aspectFitted && shapeIsOutline
                     && insidePainted && cornersEmpty;
-            System.out.println((ok ? "PASS" : "FAIL") + "  \u4e0d\u89c4\u5219\u88c1\u526a"
-                    + " (\u624b\u7ed8\u8f6e\u5ed3\u5df2\u7b80\u5316=" + traceSimplified
-                    + (traced == null ? "" : " " + traced.size() + "\u70b9")
-                    + ", \u7a97\u53e3\u6bd4\u4f8b\u8ddf\u968f=" + aspectFitted
-                    + ", \u7a97\u53e3\u5f62\u72b6=\u8f6e\u5ed3=" + shapeIsOutline
-                    + ", \u8f6e\u5ed3\u5185\u6709\u56fe=" + insidePainted
-                    + ", \u56db\u89d2\u5df2\u88c1\u6389=" + cornersEmpty + ")");
+            System.out.println((ok ? "PASS" : "FAIL") + "  不规则裁剪"
+                    + " (手绘轮廓已简化=" + traceSimplified
+                    + (traced == null ? "" : " " + traced.size() + "点")
+                    + ", 窗口比例跟随=" + aspectFitted
+                    + ", 窗口形状=轮廓=" + shapeIsOutline
+                    + ", 轮廓内有图=" + insidePainted
+                    + ", 四角已裁掉=" + cornersEmpty + ")");
             return ok;
         } catch (Exception e) {
-            System.out.println("FAIL  \u4e0d\u89c4\u5219\u88c1\u526a: " + e);
+            System.out.println("FAIL  不规则裁剪: " + e);
             return false;
         } finally {
             //noinspection ResultOfMethodCallIgnored
@@ -1339,16 +1339,16 @@ public final class Main {
             });
 
             boolean ok = wentTranslucent && marginUnpainted && platePainted && stayedOpaque[0];
-            System.out.println((ok ? "PASS" : "FAIL") + "  \u900f\u660e\u80cc\u666f\u56fe"
-                    + " (\u7a97\u53e3\u8f6c\u4e3a\u9010\u50cf\u7d20\u900f\u660e=" + wentTranslucent
-                    + ", \u900f\u660e\u5904\u672a\u7ed8\u5236=" + marginUnpainted
+            System.out.println((ok ? "PASS" : "FAIL") + "  透明背景图"
+                    + " (窗口转为逐像素透明=" + wentTranslucent
+                    + ", 透明处未绘制=" + marginUnpainted
                     + " (alpha=" + margin + ")"
-                    + ", \u4e0d\u900f\u660e\u5904\u5df2\u7ed8\u5236=" + platePainted
+                    + ", 不透明处已绘制=" + platePainted
                     + " (alpha=" + plate + ")"
-                    + ", \u65e0\u900f\u660e\u50cf\u7d20\u65f6\u4fdd\u6301\u4e0d\u900f\u660e=" + stayedOpaque[0] + ")");
+                    + ", 无透明像素时保持不透明=" + stayedOpaque[0] + ")");
             return ok;
         } catch (Exception e) {
-            System.out.println("FAIL  \u900f\u660e\u80cc\u666f\u56fe: " + e);
+            System.out.println("FAIL  透明背景图: " + e);
             return false;
         } finally {
             //noinspection ResultOfMethodCallIgnored
@@ -1402,25 +1402,25 @@ public final class Main {
     private static boolean checkBundledPreset(JPopupMenu menu) {
         java.util.List<Preset> presets = Preset.bundled();
         if (presets.isEmpty()) {
-            System.out.println("FAIL  \u9884\u8bbe\u914d\u7f6e: \u6ca1\u6709\u627e\u5230\u5185\u7f6e\u9884\u8bbe");
+            System.out.println("FAIL  预设配置: 没有找到内置预设");
             return false;
         }
         Preset preset = presets.get(0);
         // One click means the menu really offers it, not just that the file exists.
-        javax.swing.JMenu presetMenu = findSubMenu(menu, "\u9884\u8bbe\u914d\u7f6e");
+        javax.swing.JMenu presetMenu = findSubMenu(menu, "预设配置");
         boolean inMenu = presetMenu != null && findMenuItem(presetMenu, preset.getName()) != null;
         // Saving, deleting and the folder are the rest of the feature; a preset you cannot save is
         // not a preset.
         boolean actionsInMenu = presetMenu != null
-                && findMenuItem(presetMenu, "\u4fdd\u5b58\u5f53\u524d\u914d\u7f6e\u4e3a\u9884\u8bbe\u2026") != null
-                && findMenuItem(presetMenu, "\u5220\u9664\u9884\u8bbe\u2026") != null
-                && findMenuItem(presetMenu, "\u6253\u5f00\u9884\u8bbe\u6587\u4ef6\u5939\u2026") != null;
+                && findMenuItem(presetMenu, "保存当前配置为预设…") != null
+                && findMenuItem(presetMenu, "删除预设…") != null
+                && findMenuItem(presetMenu, "打开预设文件夹…") != null;
         AppConfig config = new AppConfig();
         config.removeBackgroundImage();
         config.clearCredentials();
         config.save();
         try {
-            boolean named = preset.getName().contains("\u84dd\u8272\u5927\u80a5\u9c7c");
+            boolean named = preset.getName().contains("蓝色大肥鱼");
 
             // Nothing credential-shaped may appear in the shipped preset file.
             boolean fileClean = true;
@@ -1471,18 +1471,18 @@ public final class Main {
 
             boolean ok = named && inMenu && actionsInMenu && fileClean && imageCopied && cropKept && regionKept
                     && colorKept && scaleKept && sizeKept && positionKept && noCredentials;
-            System.out.println((ok ? "PASS" : "FAIL") + "  \u9884\u8bbe\u914d\u7f6e"
+            System.out.println((ok ? "PASS" : "FAIL") + "  预设配置"
                     + " (" + preset.getName()
-                    + ", \u83dc\u5355\u91cc\u53ef\u9009=" + inMenu + " \u53ef\u4fdd\u5b58/\u5220\u9664=" + actionsInMenu
-                    + ", \u56fe\u7247\u5df2\u590d\u5236=" + imageCopied
-                    + ", \u88c1\u526a=" + cropKept + ", \u4f59\u989d\u6846=" + regionKept
-                    + ", \u989c\u8272=" + colorKept + ", \u5b57\u53f7=" + scaleKept
-                    + ", \u5c3a\u5bf8=" + sizeKept
-                    + ", \u4e0d\u6539\u7a97\u53e3\u4f4d\u7f6e=" + positionKept
-                    + ", \u4e0d\u5e26\u51ed\u636e=" + (fileClean && noCredentials) + ")");
+                    + ", 菜单里可选=" + inMenu + " 可保存/删除=" + actionsInMenu
+                    + ", 图片已复制=" + imageCopied
+                    + ", 裁剪=" + cropKept + ", 余额框=" + regionKept
+                    + ", 颜色=" + colorKept + ", 字号=" + scaleKept
+                    + ", 尺寸=" + sizeKept
+                    + ", 不改窗口位置=" + positionKept
+                    + ", 不带凭据=" + (fileClean && noCredentials) + ")");
             return ok;
         } catch (Exception e) {
-            System.out.println("FAIL  \u9884\u8bbe\u914d\u7f6e: " + e);
+            System.out.println("FAIL  预设配置: " + e);
             return false;
         } finally {
             resetSelftestConfig();
@@ -1532,7 +1532,7 @@ public final class Main {
             config.setBounds(new Rectangle(11, 22, 400, 200));
             config.save();
 
-            java.io.File folder = Preset.save("\u81ea\u6d4b\u9884\u8bbe", config);
+            java.io.File folder = Preset.save("自测预设", config);
             java.io.File settingsFile = new java.io.File(folder, "preset.properties");
             boolean saved = settingsFile.isFile();
             int pictures = 0;
@@ -1565,7 +1565,7 @@ public final class Main {
 
             Preset saved2 = null;
             for (Preset candidate : Preset.userPresets()) {
-                if ("\u81ea\u6d4b\u9884\u8bbe".equals(candidate.getName())) {
+                if ("自测预设".equals(candidate.getName())) {
                     saved2 = candidate;
                 }
             }
@@ -1595,22 +1595,22 @@ public final class Main {
                     && sizeOk && placeOk;
             boolean noCredentials = back.getProtectedApiKey().isEmpty() && !back.isRememberApiKey();
 
-            boolean removed = saved2 != null && Preset.delete(saved2) && !Preset.exists("\u81ea\u6d4b\u9884\u8bbe");
+            boolean removed = saved2 != null && Preset.delete(saved2) && !Preset.exists("自测预设");
 
             boolean ok = saved && pictureSaved && fileClean && listed && restored
                     && noCredentials && removed;
-            System.out.println((ok ? "PASS" : "FAIL") + "  \u4fdd\u5b58\u4e3a\u9884\u8bbe"
-                    + " (\u5199\u5165=" + saved + ", \u56fe\u7247\u5df2\u5b58=" + pictureSaved
-                    + ", \u53ef\u5217\u51fa=" + listed
-                    + ", \u5957\u7528\u540e\u8fd8\u539f=" + restored
-                    + " [\u56fe=" + imageOk + " \u8272=" + colorOk + " \u5b57\u53f7=" + scaleOk
-                    + " \u6846=" + regionOk + " \u88c1\u526a=" + cropOk + " \u5c3a\u5bf8=" + sizeOk
-                    + " \u4f4d\u7f6e=" + placeOk + "]"
-                    + ", \u4e0d\u5e26\u51ed\u636e=" + (fileClean && noCredentials)
-                    + ", \u53ef\u5220\u9664=" + removed + ")");
+            System.out.println((ok ? "PASS" : "FAIL") + "  保存为预设"
+                    + " (写入=" + saved + ", 图片已存=" + pictureSaved
+                    + ", 可列出=" + listed
+                    + ", 套用后还原=" + restored
+                    + " [图=" + imageOk + " 色=" + colorOk + " 字号=" + scaleOk
+                    + " 框=" + regionOk + " 裁剪=" + cropOk + " 尺寸=" + sizeOk
+                    + " 位置=" + placeOk + "]"
+                    + ", 不带凭据=" + (fileClean && noCredentials)
+                    + ", 可删除=" + removed + ")");
             return ok;
         } catch (Exception e) {
-            System.out.println("FAIL  \u4fdd\u5b58\u4e3a\u9884\u8bbe: " + e);
+            System.out.println("FAIL  保存为预设: " + e);
             return false;
         } finally {
             //noinspection ResultOfMethodCallIgnored
@@ -1630,7 +1630,7 @@ public final class Main {
      */
     private static boolean checkMenuSkin(final JPopupMenu menu) throws Exception {
         if (menu == null) {
-            System.out.println("FAIL  \u53f3\u952e\u83dc\u5355\u5916\u89c2: \u6ca1\u6709\u83dc\u5355");
+            System.out.println("FAIL  右键菜单外观: 没有菜单");
             return false;
         }
         boolean popupSkinned = menu.getUI() != null
@@ -1704,15 +1704,15 @@ public final class Main {
 
         boolean ok = popupSkinned && surface && padded && rows > 0 && rowsSkinned == rows
                 && plainWithGlyph == 0 && submenuWithoutGlyph == 0 && strayTick == 0 && lightRows == 0;
-        System.out.println((ok ? "PASS" : "FAIL") + "  \u53f3\u952e\u83dc\u5355\u5916\u89c2"
-                + " (\u9762\u677f\u5df2\u6362\u80a4=" + popupSkinned
-                + ", \u5e95\u8272=\u5e94\u7528\u8868\u9762\u8272=" + surface
-                + ", \u5185\u8fb9\u8ddd=" + padded
-                + ", \u884c\u5df2\u6362\u80a4=" + rowsSkinned + "/" + rows
-                + ", \u666e\u901a\u884c\u591a\u4f59\u7bad\u5934=" + plainWithGlyph
-                + ", \u5b50\u83dc\u5355\u7f3a\u7bad\u5934=" + submenuWithoutGlyph
-                + ", \u591a\u4f59\u52fe=" + strayTick
-                + ", \u6ca1\u753b\u4e0a\u7684\u767d\u884c=" + lightRows + ")");
+        System.out.println((ok ? "PASS" : "FAIL") + "  右键菜单外观"
+                + " (面板已换肤=" + popupSkinned
+                + ", 底色=应用表面色=" + surface
+                + ", 内边距=" + padded
+                + ", 行已换肤=" + rowsSkinned + "/" + rows
+                + ", 普通行多余箭头=" + plainWithGlyph
+                + ", 子菜单缺箭头=" + submenuWithoutGlyph
+                + ", 多余勾=" + strayTick
+                + ", 没画上的白行=" + lightRows + ")");
         return ok;
     }
 
@@ -1805,11 +1805,11 @@ public final class Main {
             boolean usageLine = false;
             boolean usageKeepsUserColour = false;
             for (JLabel label : labels) {
-                if ("\u73b0\u5728\u662f\u7e41\u5fd9\u65f6\u6bb5".equals(label.getText())) {
+                if ("现在是繁忙时段".equals(label.getText())) {
                     busyLine = label.getForeground().equals(Theme.DANGER);
                 }
                 if (label.getText() != null
-                        && label.getText().startsWith("\u4eca\u65e5\u5df2\u4f7f\u7528\u4f59\u989d")) {
+                        && label.getText().startsWith("今日已使用余额")) {
                     usageLine = true;
                     // Only the tariff line is coloured by the rule; the rest keeps the user's colour.
                     usageKeepsUserColour = label.getForeground().equals(userColour);
@@ -1824,7 +1824,7 @@ public final class Main {
             Thread.sleep(500);
             boolean idleLine = false;
             for (JLabel label : labels) {
-                if ("\u73b0\u5728\u662f\u7a7a\u95f2\u65f6\u6bb5".equals(label.getText())) {
+                if ("现在是空闲时段".equals(label.getText())) {
                     idleLine = label.getForeground().equals(Theme.GOOD);
                 }
             }
@@ -1851,7 +1851,7 @@ public final class Main {
                 }
             });
         } catch (Exception e) {
-            System.out.println("FAIL  \u60ac\u6d6e\u663e\u793a: " + e);
+            System.out.println("FAIL  悬浮显示: " + e);
             return false;
         }
 
@@ -1929,7 +1929,7 @@ public final class Main {
                 }
             });
         } catch (Exception e) {
-            System.out.println("FAIL  \u60ac\u6d6e\u663e\u793a: " + e);
+            System.out.println("FAIL  悬浮显示: " + e);
             return false;
         } finally {
             //noinspection ResultOfMethodCallIgnored
@@ -1941,12 +1941,12 @@ public final class Main {
         }
 
         boolean ok = rule && usage && cardLayout && pictureLayout;
-        System.out.println((ok ? "PASS" : "FAIL") + "  \u60ac\u6d6e\u663e\u793a\u65f6\u6bb5\u4e0e\u4eca\u65e5\u7528\u91cf"
-                + " (\u65f6\u6bb5\u89c4\u5219=" + rule
-                + ", \u4eca\u65e5\u7528\u91cf=\u57fa\u51c6/\u6d88\u8017/\u5145\u503c/\u518d\u6d88\u8017/\u6362\u5e01\u79cd=" + usage
-                + ", \u5361\u7247\u5e03\u5c40\u6587\u5b57\u4e0e\u989c\u8272=" + cardLayout
-                + ", \u80cc\u666f\u56fe\u5e03\u5c40\u6309\u50cf\u7d20=" + pictureLayout
-                + ", \u547d\u4e2d\u533a\u57df=\u6574\u4e2a\u6846\u5b9a\u8303\u56f4=" + hitAreaCoversFrame + ")");
+        System.out.println((ok ? "PASS" : "FAIL") + "  悬浮显示时段与今日用量"
+                + " (时段规则=" + rule
+                + ", 今日用量=基准/消耗/充值/再消耗/换币种=" + usage
+                + ", 卡片布局文字与颜色=" + cardLayout
+                + ", 背景图布局按像素=" + pictureLayout
+                + ", 命中区域=整个框定范围=" + hitAreaCoversFrame + ")");
         return ok;
     }
 
@@ -2068,7 +2068,7 @@ public final class Main {
             Thread.sleep(700);
 
             String first = pictureBoard[0].countdownText();
-            shownWithPicture = first.matches("\u8fd8\u6709 \\d+ \u79d2\u5237\u65b0");
+            shownWithPicture = first.matches("还有 \\d+ 秒刷新");
             int before = first.isEmpty() ? -1 : Integer.parseInt(first.replaceAll("\\D+", ""));
             drawnInTheCorner = inkInCountdownCorner(pictureBoard[0]);
 
@@ -2120,7 +2120,7 @@ public final class Main {
                 }
             });
         } catch (Exception e) {
-            System.out.println("FAIL  \u5237\u65b0\u5012\u8ba1\u65f6: " + e);
+            System.out.println("FAIL  刷新倒计时: " + e);
             return false;
         } finally {
             //noinspection ResultOfMethodCallIgnored
@@ -2130,13 +2130,13 @@ public final class Main {
 
         boolean ok = hiddenWithoutPicture && shownWithPicture && drawnInTheCorner
                 && countedDown && hiddenWhileHovering && shownAfterPreset;
-        System.out.println((ok ? "PASS" : "FAIL") + "  \u5237\u65b0\u5012\u8ba1\u65f6"
-                + " (\u65e0\u80cc\u666f\u56fe\u65f6\u4e0d\u663e\u793a=" + hiddenWithoutPicture
-                + ", \u6709\u80cc\u666f\u56fe\u65f6\u663e\u793a=" + shownWithPicture
-                + ", \u753b\u5728\u5de6\u4e0b\u89d2=" + drawnInTheCorner
-                + ", \u786e\u5b9e\u5728\u8ba1\u65f6=" + countedDown
-                + ", \u60ac\u505c\u65f6\u9690\u85cf=" + hiddenWhileHovering
-                + ", \u5957\u7528\u9884\u8bbe\u540e\u663e\u793a=" + shownAfterPreset + ")");
+        System.out.println((ok ? "PASS" : "FAIL") + "  刷新倒计时"
+                + " (无背景图时不显示=" + hiddenWithoutPicture
+                + ", 有背景图时显示=" + shownWithPicture
+                + ", 画在左下角=" + drawnInTheCorner
+                + ", 确实在计时=" + countedDown
+                + ", 悬停时隐藏=" + hiddenWhileHovering
+                + ", 套用预设后显示=" + shownAfterPreset + ")");
         return ok;
     }
 
@@ -2361,15 +2361,15 @@ public final class Main {
     private static void runPresetCommand(String[] args) {
         if (args.length >= 2 && "save".equalsIgnoreCase(args[1].trim())) {
             if (args.length < 3 || args[2].trim().isEmpty()) {
-                System.err.println("用法: java -jar dstokencheck.jar --preset save <\u540d\u5b57>");
+                System.err.println("用法: java -jar dstokencheck.jar --preset save <名字>");
                 System.exit(1);
             }
             try {
                 java.io.File folder = Preset.save(args[2].trim(), new AppConfig());
-                System.out.println("\u5df2\u4fdd\u5b58\u9884\u8bbe: " + args[2].trim());
-                System.out.println("\u9884\u8bbe\u76ee\u5f55  : " + folder.getAbsolutePath());
+                System.out.println("已保存预设: " + args[2].trim());
+                System.out.println("预设目录  : " + folder.getAbsolutePath());
             } catch (Exception e) {
-                System.err.println("\u4fdd\u5b58\u9884\u8bbe\u5931\u8d25: " + e.getMessage());
+                System.err.println("保存预设失败: " + e.getMessage());
                 System.exit(1);
             }
             return;
@@ -2378,17 +2378,17 @@ public final class Main {
         java.util.List<Preset> mine = Preset.userPresets();
         java.util.List<Preset> bundled = Preset.bundled();
         if (args.length < 2) {
-            System.out.println("\u53ef\u7528\u7684\u9884\u8bbe\u914d\u7f6e\uff1a");
+            System.out.println("可用的预设配置：");
             for (Preset preset : mine) {
-                System.out.println("  [\u6211\u7684] " + preset.getName());
+                System.out.println("  [我的] " + preset.getName());
             }
             for (Preset preset : bundled) {
-                System.out.println("  [\u5185\u7f6e] " + preset.getName() + "    " + preset.getId()
+                System.out.println("  [内置] " + preset.getName() + "    " + preset.getId()
                         + (preset.getDescription().isEmpty() ? "" : "    (" + preset.getDescription() + ")"));
             }
             System.out.println();
-            System.out.println("\u7528\u6cd5: java -jar dstokencheck.jar --preset <\u540d\u5b57>");
-            System.out.println("      java -jar dstokencheck.jar --preset save <\u540d\u5b57>");
+            System.out.println("用法: java -jar dstokencheck.jar --preset <名字>");
+            System.out.println("      java -jar dstokencheck.jar --preset save <名字>");
             return;
         }
 
@@ -2404,15 +2404,15 @@ public final class Main {
             try {
                 preset.applyTo(config);
             } catch (Exception e) {
-                System.err.println("\u5e94\u7528\u9884\u8bbe\u5931\u8d25: " + e.getMessage());
+                System.err.println("应用预设失败: " + e.getMessage());
                 System.exit(1);
             }
-            System.out.println("\u5df2\u5e94\u7528\u9884\u8bbe: " + preset.getName());
-            System.out.println("\u914d\u7f6e\u6587\u4ef6  : " + config.getFile().getAbsolutePath());
-            System.out.println("\u80cc\u666f\u56fe    : " + orNone(String.valueOf(config.getBackgroundImageFile())));
+            System.out.println("已应用预设: " + preset.getName());
+            System.out.println("配置文件  : " + config.getFile().getAbsolutePath());
+            System.out.println("背景图    : " + orNone(String.valueOf(config.getBackgroundImageFile())));
             return;
         }
-        System.err.println("\u627e\u4e0d\u5230\u9884\u8bbe: " + wanted);
+        System.err.println("找不到预设: " + wanted);
         System.exit(1);
     }
 

@@ -60,7 +60,7 @@ def main():
     # The yuan sign, centred, with a thin white top bar so it reads as ¥ and not Y.
     font = load_font(round(s * 0.62))
     d = ImageDraw.Draw(card)
-    text = "\u00a5"
+    text = "¥"
     box = d.textbbox((0, 0), text, font=font)
     x = (s - (box[2] - box[0])) / 2 - box[0]
     y = (s - (box[3] - box[1])) / 2 - box[1] - s * 0.015

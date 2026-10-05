@@ -82,9 +82,9 @@ public class DeepSeekClient {
             return "";
         }
         if (k.length() <= 12) {
-            return "\u2026" + k.substring(Math.max(0, k.length() - 4));
+            return "…" + k.substring(Math.max(0, k.length() - 4));
         }
-        return k.substring(0, 6) + "\u2026" + k.substring(k.length() - 4);
+        return k.substring(0, 6) + "…" + k.substring(k.length() - 4);
     }
 
     /** Fetches the balance for the key currently held by this client. */

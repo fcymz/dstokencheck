@@ -152,8 +152,8 @@ public class BalanceBoard extends JFrame {
     private final AuthEvents authEvents;
 
     private final BoardPanel board = new BoardPanel();
-    private final JLabel titleLabel = new JLabel("DeepSeek \u4f59\u989d");
-    private final JLabel amountLabel = new JLabel("\u2014");
+    private final JLabel titleLabel = new JLabel("DeepSeek 余额");
+    private final JLabel amountLabel = new JLabel("—");
     private final JLabel currencyLabel = new JLabel(" ");
     private final JLabel statusLabel = new JLabel(" ");
     private final JLabel accountLabel = new JLabel(" ");
@@ -164,9 +164,9 @@ public class BalanceBoard extends JFrame {
     private final JPanel footerPanel = new JPanel();
     /** Title and window buttons; hidden for an irregular outline (see updateChromeVisibility). */
     private final JPanel titleBarPanel = new JPanel();
-    private final IconButton pinButton = new IconButton(IconButton.Glyph.PIN, "\u7f6e\u9876\u5f00\u5173");
-    private final IconButton refreshButton = new IconButton(IconButton.Glyph.REFRESH, "\u7acb\u5373\u5237\u65b0");
-    private final IconButton closeButton = new IconButton(IconButton.Glyph.CLOSE, "\u9690\u85cf\u7a97\u53e3");
+    private final IconButton pinButton = new IconButton(IconButton.Glyph.PIN, "置顶开关");
+    private final IconButton refreshButton = new IconButton(IconButton.Glyph.REFRESH, "立即刷新");
+    private final IconButton closeButton = new IconButton(IconButton.Glyph.CLOSE, "隐藏窗口");
 
     /** The user's background image, or null when the built-in gradient card is used. */
     private BufferedImage backgroundImage;
@@ -195,7 +195,7 @@ public class BalanceBoard extends JFrame {
     private Color periodColor = Theme.TEXT;
     private String usageText = "";
     /** The balance as text, kept so a hover can hand it back without a refetch. */
-    private String regionAmountText = "\u2014";
+    private String regionAmountText = "—";
     /** The caption label's normal colour, restored when a hover ends. */
     private Color currencyColor;
     /** Instant the current hover is evaluated at. */
@@ -232,7 +232,7 @@ public class BalanceBoard extends JFrame {
     private boolean busy;
 
     public BalanceBoard(AppConfig config, DeepSeekClient client, AuthEvents authEvents) {
-        super("DeepSeek \u4f59\u989d");
+        super("DeepSeek 余额");
         this.config = config;
         this.client = client;
         this.authEvents = authEvents;
@@ -481,7 +481,7 @@ public class BalanceBoard extends JFrame {
         applyShape();
 
         statusLabel.setForeground(Theme.TEXT_DIM);
-        statusLabel.setText("\u5b57\u4f53 " + Math.round(now * 100) + "%");
+        statusLabel.setText("字体 " + Math.round(now * 100) + "%");
     }
 
     /** Left padding keeps every child clear of the resize border. */
@@ -497,12 +497,12 @@ public class BalanceBoard extends JFrame {
         // and the click never reaches the item.
         menu.setLightWeightPopupEnabled(false);
 
-        JMenuItem refreshItem = new JMenuItem("\u7acb\u5373\u5237\u65b0");
+        JMenuItem refreshItem = new JMenuItem("立即刷新");
         refreshItem.addActionListener(e -> refresh());
         menu.add(refreshItem);
 
-        JMenuItem logoutItem = new JMenuItem("\u9000\u51fa\u767b\u5f55");
-        logoutItem.setToolTipText("\u6e05\u9664\u672c\u673a\u4fdd\u5b58\u7684 API Key \u5e76\u91cd\u65b0\u8f93\u5165");
+        JMenuItem logoutItem = new JMenuItem("退出登录");
+        logoutItem.setToolTipText("清除本机保存的 API Key 并重新输入");
         logoutItem.addActionListener(e -> {
             if (authEvents != null) {
                 authEvents.onLogout();
@@ -514,34 +514,34 @@ public class BalanceBoard extends JFrame {
 
         // Logon startup. Kept clickable whenever the platform supports it, even if the command
         // cannot be built right now, so the user gets an explanation instead of a dead grey entry.
-        final JCheckBoxMenuItem autoStartItem = new JCheckBoxMenuItem("\u5f00\u673a\u81ea\u542f");
+        final JCheckBoxMenuItem autoStartItem = new JCheckBoxMenuItem("开机自启");
         autoStartItem.setSelected(AutoStart.isSupported() && AutoStart.isEnabled());
         autoStartItem.setEnabled(AutoStart.isSupported());
         if (!AutoStart.isSupported()) {
-            autoStartItem.setToolTipText("\u4ec5 Windows \u652f\u6301");
+            autoStartItem.setToolTipText("仅 Windows 支持");
         } else if (AutoStart.buildCommand() == null) {
-            autoStartItem.setToolTipText("\u9700\u8981\u4ee5 java -jar dstokencheck.jar \u65b9\u5f0f\u8fd0\u884c\u624d\u80fd\u8bbe\u7f6e");
+            autoStartItem.setToolTipText("需要以 java -jar dstokencheck.jar 方式运行才能设置");
         } else {
-            autoStartItem.setToolTipText("\u767b\u5f55 Windows \u540e\u81ea\u52a8\u542f\u52a8\u672c\u7a0b\u5e8f");
+            autoStartItem.setToolTipText("登录 Windows 后自动启动本程序");
         }
         autoStartItem.addActionListener(e -> toggleAutoStart(autoStartItem));
         menu.add(autoStartItem);
 
         menu.add(new JSeparator());
 
-        JMenuItem pinItem = new JMenuItem("\u7a97\u53e3\u7f6e\u9876");
+        JMenuItem pinItem = new JMenuItem("窗口置顶");
         pinItem.addActionListener(e -> toggleAlwaysOnTop());
         menu.add(pinItem);
 
-        final JMenuItem sizeItem = new JMenuItem("\u6062\u590d\u9ed8\u8ba4\u5927\u5c0f");
+        final JMenuItem sizeItem = new JMenuItem("恢复默认大小");
         sizeItem.addActionListener(e -> applySize(360, 180));
         menu.add(sizeItem);
 
-        JMenuItem smallItem = new JMenuItem("\u5c0f\u7a97\u53e3");
+        JMenuItem smallItem = new JMenuItem("小窗口");
         smallItem.addActionListener(e -> applySize(minW(), minH()));
         menu.add(smallItem);
 
-        JMenuItem bigItem = new JMenuItem("\u5927\u7a97\u53e3 (420\u00d7220 \u00d7 \u5b57\u4f53)");
+        JMenuItem bigItem = new JMenuItem("大窗口 (420×220 × 字体)");
         bigItem.addActionListener(e -> applySize(
                 Math.round(420 * config.getFontScale()),
                 Math.round(220 * config.getFontScale())));
@@ -549,7 +549,7 @@ public class BalanceBoard extends JFrame {
 
         menu.add(new JSeparator());
 
-        final JMenu presetMenu = new JMenu("\u9884\u8bbe\u914d\u7f6e");
+        final JMenu presetMenu = new JMenu("预设配置");
         // Rebuilt whenever it opens: a preset can be saved while the app is running, and the menu
         // has to offer it without a restart.
         presetMenu.getPopupMenu().addPopupMenuListener(new PopupMenuListener() {
@@ -573,15 +573,15 @@ public class BalanceBoard extends JFrame {
 
         menu.add(new JSeparator());
 
-        JMenuItem backgroundItem = new JMenuItem("\u80cc\u666f\u56fe\u2026");
-        backgroundItem.setToolTipText("\u9009\u62e9\u4e00\u5f20\u56fe\u7247\uff0c\u5e76\u6846\u5b9a\u4f59\u989d\u663e\u793a\u7684\u4f4d\u7f6e");
+        JMenuItem backgroundItem = new JMenuItem("背景图…");
+        backgroundItem.setToolTipText("选择一张图片，并框定余额显示的位置");
         // Deferred: this opens a modal dialog, and a nested event loop started while the popup is
         // still on screen can leave the menu stuck behind (or in front of) the dialog.
         backgroundItem.addActionListener(e -> SwingUtilities.invokeLater(this::openBackgroundDialog));
         menu.add(backgroundItem);
 
-        final JMenuItem clearBackgroundItem = new JMenuItem("\u6062\u590d\u9ed8\u8ba4\u80cc\u666f");
-        clearBackgroundItem.setToolTipText("\u79fb\u9664\u81ea\u5b9a\u4e49\u80cc\u666f\u56fe\uff0c\u56de\u5230\u5185\u7f6e\u6df1\u8272\u5361\u7247");
+        final JMenuItem clearBackgroundItem = new JMenuItem("恢复默认背景");
+        clearBackgroundItem.setToolTipText("移除自定义背景图，回到内置深色卡片");
         clearBackgroundItem.addActionListener(e -> clearBackgroundImage());
         menu.add(clearBackgroundItem);
 
@@ -612,14 +612,14 @@ public class BalanceBoard extends JFrame {
 
         // 5s / 10s / 30s / 60s / 300s
         for (final int seconds : new int[]{5, 10, 30, 60, 300}) {
-            JMenuItem item = new JMenuItem("\u6bcf " + seconds + " \u79d2\u5237\u65b0");
+            JMenuItem item = new JMenuItem("每 " + seconds + " 秒刷新");
             item.addActionListener(e -> setRefreshSeconds(seconds));
             menu.add(item);
         }
 
         menu.add(new JSeparator());
 
-        JMenuItem quitItem = new JMenuItem("\u9000\u51fa");
+        JMenuItem quitItem = new JMenuItem("退出");
         quitItem.addActionListener(e -> {
             shutdown();
             System.exit(0);
@@ -636,13 +636,13 @@ public class BalanceBoard extends JFrame {
      * coherently rather than making the user tune each label.
      */
     private JMenu buildFontScaleMenu() {
-        JMenu fontMenu = new JMenu("\u5b57\u4f53\u5927\u5c0f (" + Math.round(config.getFontScale() * 100) + "%)");
+        JMenu fontMenu = new JMenu("字体大小 (" + Math.round(config.getFontScale() * 100) + "%)");
 
-        JMenuItem larger = new JMenuItem("\u66f4\u5927   (Ctrl + \u6eda\u8f6e\u4e0a)");
+        JMenuItem larger = new JMenuItem("更大   (Ctrl + 滚轮上)");
         larger.addActionListener(e -> setFontScale(config.getFontScale() + FONT_SCALE_STEP));
         fontMenu.add(larger);
 
-        JMenuItem smaller = new JMenuItem("\u66f4\u5c0f   (Ctrl + \u6eda\u8f6e\u4e0b)");
+        JMenuItem smaller = new JMenuItem("更小   (Ctrl + 滚轮下)");
         smaller.addActionListener(e -> setFontScale(config.getFontScale() - FONT_SCALE_STEP));
         fontMenu.add(smaller);
 
@@ -656,7 +656,7 @@ public class BalanceBoard extends JFrame {
 
         fontMenu.addSeparator();
 
-        JMenuItem custom = new JMenuItem("\u81ea\u5b9a\u4e49\u2026");
+        JMenuItem custom = new JMenuItem("自定义…");
         custom.addActionListener(e -> showFontScaleDialog());
         fontMenu.add(custom);
 
@@ -668,7 +668,7 @@ public class BalanceBoard extends JFrame {
      * the widget itself is the live preview.
      */
     private void showFontScaleDialog() {
-        final JDialog dialog = new JDialog(this, "\u5b57\u4f53\u5927\u5c0f", false);
+        final JDialog dialog = new JDialog(this, "字体大小", false);
         dialog.setLayout(new BorderLayout(10, 8));
         // The widget is always-on-top, so the dialog has to be too or it hides behind it.
         dialog.setAlwaysOnTop(true);
@@ -705,10 +705,10 @@ public class BalanceBoard extends JFrame {
         center.add(slider, BorderLayout.CENTER);
         center.add(valueLabel, BorderLayout.SOUTH);
 
-        JButton resetButton = new JButton("\u6062\u590d 100%");
+        JButton resetButton = new JButton("恢复 100%");
         resetButton.addActionListener(e -> slider.setValue(100));
 
-        JButton doneButton = new JButton("\u5b8c\u6210");
+        JButton doneButton = new JButton("完成");
         doneButton.addActionListener(e -> dialog.dispose());
 
         JPanel south = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
@@ -737,7 +737,7 @@ public class BalanceBoard extends JFrame {
             }
             // The registry entry is the state; nothing else needs recording.
             statusLabel.setForeground(Theme.TEXT_DIM);
-            statusLabel.setText(want ? "\u5df2\u5f00\u542f\u5f00\u673a\u81ea\u542f" : "\u5df2\u5173\u95ed\u5f00\u673a\u81ea\u542f");
+            statusLabel.setText(want ? "已开启开机自启" : "已关闭开机自启");
         } catch (AutoStart.AutoStartException ex) {
             item.setSelected(!want);
             statusLabel.setForeground(Theme.DANGER);
@@ -745,7 +745,7 @@ public class BalanceBoard extends JFrame {
             // The footer is tiny and truncated, and this was an explicit user action, so show the
             // explanation properly rather than leaving the user wondering why the tick reverted.
             javax.swing.JOptionPane.showMessageDialog(this, ex.getMessage(),
-                    "\u5f00\u673a\u81ea\u542f\u8bbe\u7f6e\u5931\u8d25", javax.swing.JOptionPane.WARNING_MESSAGE);
+                    "开机自启设置失败", javax.swing.JOptionPane.WARNING_MESSAGE);
         }
     }
 
@@ -756,7 +756,7 @@ public class BalanceBoard extends JFrame {
         // The countdown restarts too, or the new interval would be counted from the old anchor.
         refreshAnchorAt = System.currentTimeMillis();
         updateCountdown();
-        statusLabel.setText("\u5237\u65b0\u95f4\u9694\u5df2\u8bbe\u4e3a " + seconds + " \u79d2");
+        statusLabel.setText("刷新间隔已设为 " + seconds + " 秒");
     }
 
     private void toggleAlwaysOnTop() {
@@ -865,8 +865,8 @@ public class BalanceBoard extends JFrame {
             // we are in and say so on the picture itself — the footer is hidden by then, and a black
             // rectangle with no explanation is worse than a rectangle with one.
             String hint = want
-                    ? "\u5f53\u524d\u7cfb\u7edf\u4e0d\u652f\u6301\u7a97\u53e3\u900f\u660e\uff0c\u80cc\u666f\u56fe\u7684\u900f\u660e\u533a\u57df\u4f1a\u663e\u793a\u4e3a\u6df1\u8272"
-                    : "\u80cc\u666f\u56fe\u5df2\u66f4\u6362\uff0c\u91cd\u542f\u540e\u751f\u6548";
+                    ? "当前系统不支持窗口透明，背景图的透明区域会显示为深色"
+                    : "背景图已更换，重启后生效";
             statusLabel.setForeground(Theme.WARN);
             statusLabel.setText(hint);
             board.setErrorText(hint);
@@ -977,7 +977,7 @@ public class BalanceBoard extends JFrame {
         if (backgroundImage == null || balanceHovered) {
             return "";
         }
-        return "\u8fd8\u6709 " + remainingSeconds() + " \u79d2\u5237\u65b0";
+        return "还有 " + remainingSeconds() + " 秒刷新";
     }
 
     /**
@@ -1006,7 +1006,7 @@ public class BalanceBoard extends JFrame {
             return " ";
         }
         return "API Key " + DeepSeekClient.maskKey(key)
-                + (config.hasStoredApiKey() ? "  \u00b7 \u5df2\u8bb0\u4f4f" : "  \u00b7 \u4ec5\u672c\u6b21");
+                + (config.hasStoredApiKey() ? "  · 已记住" : "  · 仅本次");
     }
 
     private void shutdown() {
@@ -1043,13 +1043,13 @@ public class BalanceBoard extends JFrame {
         busy = true;
         refreshButton.setActive(true);
         statusLabel.setForeground(Theme.TEXT_DIM);
-        statusLabel.setText("\u6b63\u5728\u5237\u65b0\u2026");
+        statusLabel.setText("正在刷新…");
 
         if (isDemo()) {
             busy = false;
             refreshButton.setActive(false);
             render(demoSnapshot());
-            accountLabel.setText("\u6f14\u793a\u6570\u636e\uff08--demo\uff09");
+            accountLabel.setText("演示数据（--demo）");
             return;
         }
 
@@ -1090,7 +1090,7 @@ public class BalanceBoard extends JFrame {
         StringBuilder cur = new StringBuilder(snap.primaryCurrency());
         if (snap.getTotalAvailableTokenEstimation() != null
                 && !snap.getTotalAvailableTokenEstimation().isEmpty()) {
-            cur.append("  \u2248 ").append(compactTokens(snap.getTotalAvailableTokenEstimation()))
+            cur.append("  ≈ ").append(compactTokens(snap.getTotalAvailableTokenEstimation()))
                     .append(" tokens");
         }
         currencyLabel.setText(cur.toString());
@@ -1102,13 +1102,13 @@ public class BalanceBoard extends JFrame {
         List<String> info = new ArrayList<String>();
         BigDecimal bonus = snap.bonusInPrimaryCurrency();
         if (bonus != null && bonus.signum() > 0) {
-            String line = "\u542b\u8d60\u9001 " + snap.primarySymbol() + format(bonus);
+            String line = "含赠送 " + snap.primarySymbol() + format(bonus);
             info.add(line);
             addLine(line, Theme.alpha(Theme.GOOD, 210));
         }
         for (Wallet w : snap.secondaryWallets()) {
             String line = w.getSymbol() + format(w.getBalance()) + " " + w.getCurrency()
-                    + (w.isBonus() ? "  (\u8d60\u9001)" : "");
+                    + (w.isBonus() ? "  (赠送)" : "");
             info.add(line);
             addLine(line, w.isBonus() ? Theme.alpha(Theme.GOOD, 210) : Theme.TEXT_DIM);
         }
@@ -1118,7 +1118,7 @@ public class BalanceBoard extends JFrame {
 
         StringBuilder caption = new StringBuilder(currencyLabel.getText().trim());
         for (String line : info) {
-            caption.append("  \u00b7  ").append(line);
+            caption.append("  ·  ").append(line);
         }
         regionSubtitle = caption.toString();
 
@@ -1138,7 +1138,7 @@ public class BalanceBoard extends JFrame {
         applyContentAlpha();
 
         statusLabel.setForeground(Theme.TEXT_DIM);
-        statusLabel.setText("\u66f4\u65b0\u4e8e " + new SimpleDateFormat("HH:mm:ss").format(new Date(snap.getFetchedAtMillis())));
+        statusLabel.setText("更新于 " + new SimpleDateFormat("HH:mm:ss").format(new Date(snap.getFetchedAtMillis())));
         board.setErrorText("");
         board.repaint();
     }
@@ -1199,7 +1199,7 @@ public class BalanceBoard extends JFrame {
             return "";
         }
         String one = s.replace('\n', ' ').replace('\r', ' ');
-        return one.length() <= max ? one : one.substring(0, max) + "\u2026";
+        return one.length() <= max ? one : one.substring(0, max) + "…";
     }
 
     private static boolean isOnScreen(Rectangle r) {
@@ -1492,9 +1492,9 @@ public class BalanceBoard extends JFrame {
     /** "今日已使用余额￥12.34", or a placeholder until the first balance is known. */
     private String usageLine() {
         if (!usageKnown) {
-            return "\u4eca\u65e5\u5df2\u4f7f\u7528\u4f59\u989d\u2014\u2014";
+            return "今日已使用余额——";
         }
-        return "\u4eca\u65e5\u5df2\u4f7f\u7528\u4f59\u989d" + usageSymbol + format(usageAmount);
+        return "今日已使用余额" + usageSymbol + format(usageAmount);
     }
 
     private AWTEventListener createMouseWatcher() {
@@ -1831,7 +1831,7 @@ public class BalanceBoard extends JFrame {
             // to show the picture with the same proportions or the number lands somewhere else.
             fitWindowToImageAspect();
             statusLabel.setForeground(Theme.TEXT_DIM);
-            statusLabel.setText("\u5df2\u5e94\u7528\u80cc\u666f\u56fe");
+            statusLabel.setText("已应用背景图");
         }
     }
 
@@ -1839,7 +1839,7 @@ public class BalanceBoard extends JFrame {
         config.removeBackgroundImage();
         applyConfiguredBackground();
         statusLabel.setForeground(Theme.TEXT_DIM);
-        statusLabel.setText("\u5df2\u6062\u590d\u9ed8\u8ba4\u80cc\u666f");
+        statusLabel.setText("已恢复默认背景");
     }
 
     /**
@@ -1848,8 +1848,8 @@ public class BalanceBoard extends JFrame {
     private void rebuildPresetMenu(JMenu presetMenu) {
         presetMenu.removeAll();
 
-        JMenuItem save = new JMenuItem("\u4fdd\u5b58\u5f53\u524d\u914d\u7f6e\u4e3a\u9884\u8bbe\u2026");
-        save.setToolTipText("\u628a\u73b0\u5728\u7684\u80cc\u666f\u56fe\u3001\u88c1\u526a\u3001\u989c\u8272\u4e0e\u5b57\u53f7\u5b58\u6210\u4e00\u4e2a\u9884\u8bbe");
+        JMenuItem save = new JMenuItem("保存当前配置为预设…");
+        save.setToolTipText("把现在的背景图、裁剪、颜色与字号存成一个预设");
         save.addActionListener(e -> saveCurrentAsPreset());
         presetMenu.add(save);
 
@@ -1858,7 +1858,7 @@ public class BalanceBoard extends JFrame {
             presetMenu.add(new JSeparator());
             for (final Preset preset : mine) {
                 JMenuItem item = new JMenuItem(preset.getName());
-                item.setToolTipText("\u4e00\u952e\u5957\u7528\uff08\u81ea\u5df1\u4fdd\u5b58\u7684\uff09");
+                item.setToolTipText("一键套用（自己保存的）");
                 item.addActionListener(e -> applyPreset(preset));
                 presetMenu.add(item);
             }
@@ -1870,7 +1870,7 @@ public class BalanceBoard extends JFrame {
             for (final Preset preset : bundled) {
                 JMenuItem item = new JMenuItem(preset.getName());
                 item.setToolTipText(preset.getDescription().isEmpty()
-                        ? "\u4e00\u952e\u5957\u7528\uff08\u5185\u7f6e\uff09"
+                        ? "一键套用（内置）"
                         : preset.getDescription());
                 item.addActionListener(e -> applyPreset(preset));
                 presetMenu.add(item);
@@ -1878,13 +1878,13 @@ public class BalanceBoard extends JFrame {
         }
 
         presetMenu.add(new JSeparator());
-        JMenuItem deleteItem = new JMenuItem("\u5220\u9664\u9884\u8bbe\u2026");
-        deleteItem.setToolTipText("\u5220\u9664\u81ea\u5df1\u4fdd\u5b58\u7684\u9884\u8bbe\uff08\u5185\u7f6e\u9884\u8bbe\u4e0d\u53ef\u5220\u9664\uff09");
+        JMenuItem deleteItem = new JMenuItem("删除预设…");
+        deleteItem.setToolTipText("删除自己保存的预设（内置预设不可删除）");
         deleteItem.addActionListener(e -> deletePresetFlow());
         presetMenu.add(deleteItem);
 
-        JMenuItem openFolder = new JMenuItem("\u6253\u5f00\u9884\u8bbe\u6587\u4ef6\u5939\u2026");
-        openFolder.setToolTipText("\u81ea\u5df1\u4fdd\u5b58\u7684\u9884\u8bbe\u90fd\u5728\u8fd9\u91cc\uff0c\u53ef\u4ee5\u590d\u5236\u7ed9\u522b\u4eba");
+        JMenuItem openFolder = new JMenuItem("打开预设文件夹…");
+        openFolder.setToolTipText("自己保存的预设都在这里，可以复制给别人");
         openFolder.addActionListener(e -> openPresetFolder());
         presetMenu.add(openFolder);
 
@@ -1902,10 +1902,10 @@ public class BalanceBoard extends JFrame {
         final List<Preset> mine = Preset.userPresets();
         if (mine.isEmpty()) {
             statusLabel.setForeground(Theme.TEXT_DIM);
-            statusLabel.setText("\u8fd8\u6ca1\u6709\u81ea\u5df1\u4fdd\u5b58\u7684\u9884\u8bbe");
+            statusLabel.setText("还没有自己保存的预设");
             return;
         }
-        final JDialog dialog = new JDialog(this, "\u5220\u9664\u9884\u8bbe", true);
+        final JDialog dialog = new JDialog(this, "删除预设", true);
         dialog.setUndecorated(true);
         dialog.setBackground(Theme.BG_BOTTOM);
         CardPanel card = new CardPanel(18);
@@ -1915,12 +1915,12 @@ public class BalanceBoard extends JFrame {
         JPanel rows = new JPanel();
         rows.setOpaque(false);
         rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
-        JLabel title = new JLabel("\u5220\u9664\u9884\u8bbe");
+        JLabel title = new JLabel("删除预设");
         title.setFont(Theme.ui(Font.BOLD, 14f));
         title.setForeground(Theme.TEXT);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
         rows.add(title);
-        JLabel hint = new JLabel("\u70b9\u51fb\u5373\u5220\u9664\uff0c\u65e0\u6cd5\u6062\u590d");
+        JLabel hint = new JLabel("点击即删除，无法恢复");
         hint.setFont(Theme.ui(Font.PLAIN, 10.5f));
         hint.setForeground(Theme.TEXT_DIM);
         hint.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -1928,15 +1928,15 @@ public class BalanceBoard extends JFrame {
         rows.add(hint);
         rows.add(Box.createVerticalStrut(12));
         for (final Preset preset : mine) {
-            FlatButton row = new FlatButton("\u5220\u9664\u3000" + preset.getName(), FlatButton.Kind.SECONDARY);
+            FlatButton row = new FlatButton("删除　" + preset.getName(), FlatButton.Kind.SECONDARY);
             row.setAlignmentX(Component.LEFT_ALIGNMENT);
             row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
             row.addActionListener(e -> {
                 boolean gone = Preset.delete(preset);
                 statusLabel.setForeground(gone ? Theme.TEXT_DIM : Theme.DANGER);
                 statusLabel.setText(gone
-                        ? "\u5df2\u5220\u9664\u9884\u8bbe\uff1a" + preset.getName()
-                        : "\u5220\u9664\u5931\u8d25\uff1a" + preset.getName());
+                        ? "已删除预设：" + preset.getName()
+                        : "删除失败：" + preset.getName());
                 dialog.dispose();
             });
             rows.add(row);
@@ -1946,7 +1946,7 @@ public class BalanceBoard extends JFrame {
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         actions.setOpaque(false);
-        FlatButton cancel = new FlatButton("\u53d6\u6d88", FlatButton.Kind.SECONDARY);
+        FlatButton cancel = new FlatButton("取消", FlatButton.Kind.SECONDARY);
         cancel.addActionListener(e -> dialog.dispose());
         actions.add(cancel);
         JPanel south = new JPanel(new BorderLayout());
@@ -1967,8 +1967,8 @@ public class BalanceBoard extends JFrame {
         final List<Preset> existing = Preset.userPresets();
         String suggested = existing.isEmpty() ? "" : existing.get(existing.size() - 1).getName();
         TextPromptDialog dialog = new TextPromptDialog(this,
-                "\u4fdd\u5b58\u4e3a\u9884\u8bbe\u914d\u7f6e",
-                "\u8f93\u5165\u9884\u8bbe\u914d\u7f6e\u540d",
+                "保存为预设配置",
+                "输入预设配置名",
                 suggested,
                 text -> {
                     String name = text == null ? "" : text.trim();
@@ -1976,9 +1976,9 @@ public class BalanceBoard extends JFrame {
                         return null;
                     }
                     if (Preset.exists(name)) {
-                        return "\u5df2\u6709\u540c\u540d\u9884\u8bbe\uff0c\u4fdd\u5b58\u4f1a\u8986\u76d6\u5b83";
+                        return "已有同名预设，保存会覆盖它";
                     }
-                    return "\u4fdd\u5b58\u540e\u53ef\u5728\u53f3\u952e\u83dc\u5355\u300c\u9884\u8bbe\u914d\u7f6e\u300d\u91cc\u627e\u5230";
+                    return "保存后可在右键菜单「预设配置」里找到";
                 });
         dialog.setVisible(true);
         String name = dialog.getValue();
@@ -1989,24 +1989,24 @@ public class BalanceBoard extends JFrame {
         try {
             Preset.save(name, config);
         } catch (Exception e) {
-            showError("\u4fdd\u5b58\u9884\u8bbe\u5931\u8d25\uff1a" + e.getMessage());
+            showError("保存预设失败：" + e.getMessage());
             return;
         }
         statusLabel.setForeground(Theme.TEXT_DIM);
-        statusLabel.setText("\u5df2\u4fdd\u5b58\u9884\u8bbe\uff1a" + name + (overwritten ? "\uff08\u5df2\u8986\u76d6\uff09" : ""));
+        statusLabel.setText("已保存预设：" + name + (overwritten ? "（已覆盖）" : ""));
     }
 
     /** Opens the preset folder, where user presets are plain folders that can be copied or deleted. */
     private void openPresetFolder() {
         java.io.File folder = Preset.directory();
         if (!folder.isDirectory() && !folder.mkdirs()) {
-            showError("\u65e0\u6cd5\u6253\u5f00\u9884\u8bbe\u6587\u4ef6\u5939");
+            showError("无法打开预设文件夹");
             return;
         }
         try {
             java.awt.Desktop.getDesktop().open(folder);
         } catch (Exception e) {
-            showError("\u65e0\u6cd5\u6253\u5f00\u9884\u8bbe\u6587\u4ef6\u5939\uff1a" + folder.getAbsolutePath());
+            showError("无法打开预设文件夹：" + folder.getAbsolutePath());
         }
     }
 
@@ -2023,9 +2023,9 @@ public class BalanceBoard extends JFrame {
         } catch (Exception e) {
             String message = e.getMessage() == null ? e.toString() : e.getMessage();
             statusLabel.setForeground(Theme.DANGER);
-            statusLabel.setText("\u9884\u8bbe\u5e94\u7528\u5931\u8d25\uff1a" + message);
+            statusLabel.setText("预设应用失败：" + message);
             // The footer is hidden behind a picture, so the failure has to appear on the picture.
-            board.setErrorText("\u9884\u8bbe\u5e94\u7528\u5931\u8d25\uff1a" + message);
+            board.setErrorText("预设应用失败：" + message);
             return;
         }
         applyConfiguredBackground();
@@ -2036,7 +2036,7 @@ public class BalanceBoard extends JFrame {
         refreshTimer.setDelay(config.getRefreshSeconds() * 1000);
         refreshTimer.setInitialDelay(config.getRefreshSeconds() * 1000);
         statusLabel.setForeground(Theme.TEXT_DIM);
-        statusLabel.setText("\u5df2\u5e94\u7528 " + preset.getName());
+        statusLabel.setText("已应用 " + preset.getName());
     }
 
     /**
@@ -2363,10 +2363,10 @@ public class BalanceBoard extends JFrame {
                 return text;
             }
             int end = text.length();
-            while (end > 1 && fm.stringWidth(text.substring(0, end) + "\u2026") > maxWidth) {
+            while (end > 1 && fm.stringWidth(text.substring(0, end) + "…") > maxWidth) {
                 end--;
             }
-            return text.substring(0, end) + "\u2026";
+            return text.substring(0, end) + "…";
         }
 
         @Override

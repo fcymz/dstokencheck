@@ -35,7 +35,7 @@ public class Wallet {
 
     public String getSymbol() {
         if ("CNY".equalsIgnoreCase(currency)) {
-            return "\u00a5";
+            return "¥";
         }
         if ("USD".equalsIgnoreCase(currency)) {
             return "$";

@@ -49,13 +49,13 @@ public class ApiKeyDialog extends JDialog {
     private final DeepSeekClient client;
 
     private final JPasswordField keyField = new JPasswordField();
-    private final JCheckBox rememberBox = new JCheckBox("\u8bb0\u4f4f\u6211\uff08\u52a0\u5bc6\u4fdd\u5b58\u5230\u672c\u673a\uff09");
-    private final JCheckBox showBox = new JCheckBox("\u663e\u793a");
+    private final JCheckBox rememberBox = new JCheckBox("记住我（加密保存到本机）");
+    private final JCheckBox showBox = new JCheckBox("显示");
     private final JLabel errorLabel = new JLabel(" ");
     private final JLabel hintLabel = new JLabel(" ");
-    private final JLabel linkLabel = new JLabel("\u53bb platform.deepseek.com \u83b7\u53d6 API Key");
+    private final JLabel linkLabel = new JLabel("去 platform.deepseek.com 获取 API Key");
     private final FlatButton submitButton =
-            new FlatButton("\u767b\u5f55", FlatButton.Kind.PRIMARY);
+            new FlatButton("登录", FlatButton.Kind.PRIMARY);
 
     private boolean succeeded;
     private boolean busy;
@@ -110,12 +110,12 @@ public class ApiKeyDialog extends JDialog {
         // ---- title row ----
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
-        JLabel title = new JLabel("DeepSeek API Key \u767b\u5f55");
+        JLabel title = new JLabel("DeepSeek API Key 登录");
         title.setFont(Theme.ui(Font.BOLD, 14f));
         title.setForeground(Theme.TEXT);
         titleRow.add(title, BorderLayout.WEST);
 
-        IconButton close = new IconButton(IconButton.Glyph.CLOSE, "\u53d6\u6d88");
+        IconButton close = new IconButton(IconButton.Glyph.CLOSE, "取消");
         close.addActionListener(e -> {
             succeeded = false;
             setVisible(false);
@@ -131,7 +131,7 @@ public class ApiKeyDialog extends JDialog {
 
         form.add(fieldLabel("API Key"));
         style(keyField);
-        keyField.setEchoChar('\u2022');
+        keyField.setEchoChar('•');
         form.add(keyField);
 
         form.add(Box.createVerticalStrut(8));
@@ -140,7 +140,7 @@ public class ApiKeyDialog extends JDialog {
         showBox.setForeground(Theme.TEXT_DIM);
         showBox.setFocusPainted(false);
         showBox.setAlignmentX(Component.LEFT_ALIGNMENT);
-        showBox.addActionListener(e -> keyField.setEchoChar(showBox.isSelected() ? (char) 0 : '\u2022'));
+        showBox.addActionListener(e -> keyField.setEchoChar(showBox.isSelected() ? (char) 0 : '•'));
         form.add(showBox);
 
         form.add(Box.createVerticalStrut(4));
@@ -156,7 +156,7 @@ public class ApiKeyDialog extends JDialog {
         hintLabel.setFont(Theme.ui(Font.PLAIN, 10f));
         hintLabel.setForeground(Theme.TEXT_DIM);
         hintLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        hintLabel.setText("\u52a0\u5bc6\u65b9\u5f0f: " + SecretStore.activeScheme());
+        hintLabel.setText("加密方式: " + SecretStore.activeScheme());
         form.add(hintLabel);
 
         errorLabel.setFont(Theme.ui(Font.PLAIN, 10.5f));
@@ -232,7 +232,7 @@ public class ApiKeyDialog extends JDialog {
         } catch (Exception ignored) {
             // Fall through to the tooltip, which already shows the URL.
         }
-        setError("\u65e0\u6cd5\u81ea\u52a8\u6253\u5f00\u6d4f\u89c8\u5668\uff0c\u8bf7\u624b\u52a8\u8bbf\u95ee " + API_KEYS_URL);
+        setError("无法自动打开浏览器，请手动访问 " + API_KEYS_URL);
     }
 
     private void submit() {
@@ -241,14 +241,14 @@ public class ApiKeyDialog extends JDialog {
         }
         final String key = new String(keyField.getPassword()).trim();
         if (key.isEmpty()) {
-            setError("\u8bf7\u8f93\u5165 API Key");
+            setError("请输入 API Key");
             return;
         }
 
         setError(null);
         busy = true;
         submitButton.setEnabled(false);
-        submitButton.setText("\u9a8c\u8bc1\u4e2d\u2026");
+        submitButton.setText("验证中…");
 
         new SwingWorker<Void, Void>() {
             @Override
@@ -262,7 +262,7 @@ public class ApiKeyDialog extends JDialog {
             protected void done() {
                 busy = false;
                 submitButton.setEnabled(true);
-                submitButton.setText("\u767b\u5f55");
+                submitButton.setText("登录");
                 try {
                     get();
                     persist(key);

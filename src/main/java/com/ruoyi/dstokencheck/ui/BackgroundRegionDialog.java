@@ -152,14 +152,14 @@ public class BackgroundRegionDialog extends JDialog {
     private final CurrentSwatch currentSwatch = new CurrentSwatch();
     private final JTextField hexField = new JTextField();
     private final List<ColorChip> chips = new ArrayList<ColorChip>();
-    private final FlatButton fitButton = new FlatButton("\u9002\u5e94\u7a97\u53e3", FlatButton.Kind.SECONDARY);
+    private final FlatButton fitButton = new FlatButton("适应窗口", FlatButton.Kind.SECONDARY);
     private final FlatButton oneToOneButton = new FlatButton("1:1", FlatButton.Kind.SECONDARY);
-    private final FlatButton resetButton = new FlatButton("\u91cd\u7f6e\u533a\u57df", FlatButton.Kind.SECONDARY);
-    private final FlatButton regionModeButton = new FlatButton("\u4f59\u989d\u533a\u57df", FlatButton.Kind.SECONDARY);
-    private final FlatButton rectModeButton = new FlatButton("\u77e9\u5f62\u88c1\u526a", FlatButton.Kind.SECONDARY);
-    private final FlatButton freeModeButton = new FlatButton("\u81ea\u7531\u88c1\u526a", FlatButton.Kind.SECONDARY);
+    private final FlatButton resetButton = new FlatButton("重置区域", FlatButton.Kind.SECONDARY);
+    private final FlatButton regionModeButton = new FlatButton("余额区域", FlatButton.Kind.SECONDARY);
+    private final FlatButton rectModeButton = new FlatButton("矩形裁剪", FlatButton.Kind.SECONDARY);
+    private final FlatButton freeModeButton = new FlatButton("自由裁剪", FlatButton.Kind.SECONDARY);
     private final FlatButton saveButton =
-            new FlatButton("\u4fdd\u5b58\u5e76\u5e94\u7528", FlatButton.Kind.PRIMARY);
+            new FlatButton("保存并应用", FlatButton.Kind.PRIMARY);
 
     private ImageCanvas canvas;
     private JScrollPane scrollPane;
@@ -173,7 +173,7 @@ public class BackgroundRegionDialog extends JDialog {
     private Point windowOrigin;
 
     public BackgroundRegionDialog(Frame owner, AppConfig config, PreviewData preview) {
-        super(owner, "\u81ea\u5b9a\u4e49\u80cc\u666f\u56fe", true);
+        super(owner, "自定义背景图", true);
         this.config = config;
         this.preview = preview == null ? new PreviewData("", "", "", "", "") : preview;
         this.originalImageName = config.getBackgroundImageName();
@@ -199,8 +199,8 @@ public class BackgroundRegionDialog extends JDialog {
         updateReadout();
         updateEnabledState();
         setStatus(image == null
-                ? "\u5148\u9009\u4e00\u5f20\u80cc\u666f\u56fe"
-                : "\u62d6\u62fd\u6846\u51fa\u4f59\u989d\u663e\u793a\u533a\u57df\uff1b\u5207\u5230\u88c1\u526a\u6a21\u5f0f\u53ef\u88c1\u6389\u591a\u4f59\u8fb9\u7f18", false);
+                ? "先选一张背景图"
+                : "拖拽框出余额显示区域；切到裁剪模式可裁掉多余边缘", false);
         sizeAndCentre(owner);
 
         // The widget is always-on-top, so this window has to be too or it opens behind it.
@@ -274,11 +274,11 @@ public class BackgroundRegionDialog extends JDialog {
         JPanel headings = new JPanel();
         headings.setOpaque(false);
         headings.setLayout(new BoxLayout(headings, BoxLayout.Y_AXIS));
-        JLabel title = new JLabel("\u81ea\u5b9a\u4e49\u80cc\u666f\u56fe");
+        JLabel title = new JLabel("自定义背景图");
         title.setFont(Theme.ui(Font.BOLD, 15f));
         title.setForeground(Theme.TEXT);
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
-        JLabel subtitle = new JLabel("\u9009\u4e00\u5f20\u56fe\u7247\uff0c\u5728\u56fe\u4e0a\u6846\u51fa\u4f59\u989d\u8981\u663e\u793a\u7684\u4f4d\u7f6e");
+        JLabel subtitle = new JLabel("选一张图片，在图上框出余额要显示的位置");
         subtitle.setFont(Theme.ui(Font.PLAIN, 10.5f));
         subtitle.setForeground(Theme.TEXT_DIM);
         subtitle.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -287,7 +287,7 @@ public class BackgroundRegionDialog extends JDialog {
         headings.add(subtitle);
         row.add(headings, BorderLayout.WEST);
 
-        IconButton close = new IconButton(IconButton.Glyph.CLOSE, "\u53d6\u6d88 (Esc)");
+        IconButton close = new IconButton(IconButton.Glyph.CLOSE, "取消 (Esc)");
         close.addActionListener(e -> onCancel());
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         right.setOpaque(false);
@@ -337,7 +337,7 @@ public class BackgroundRegionDialog extends JDialog {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         left.setOpaque(false);
 
-        FlatButton choose = new FlatButton("\u9009\u62e9\u56fe\u7247\u2026", FlatButton.Kind.PRIMARY);
+        FlatButton choose = new FlatButton("选择图片…", FlatButton.Kind.PRIMARY);
         choose.setIcon(new IconButton.GlyphIcon(IconButton.Glyph.IMAGE, 15));
         choose.setIconTextGap(8);
         choose.addActionListener(e -> chooseImage());
@@ -399,16 +399,16 @@ public class BackgroundRegionDialog extends JDialog {
         regionModeButton.setActive(mode == MODE_REGION);
         rectModeButton.setActive(mode == MODE_RECT);
         freeModeButton.setActive(mode == MODE_FREE);
-        resetButton.setText(cropMode() ? "\u91cd\u7f6e\u88c1\u526a" : "\u91cd\u7f6e\u533a\u57df");
+        resetButton.setText(cropMode() ? "重置裁剪" : "重置区域");
     }
 
     private void resetActiveBox() {
         if (cropMode()) {
             canvas.setCrop(CropShape.rectangle(BackgroundLayout.fullCrop()));
-            setStatus("\u5df2\u53d6\u6d88\u88c1\u526a\uff0c\u5c0f\u7a97\u53e3\u5c06\u663e\u793a\u6574\u5f20\u56fe\u7247", false);
+            setStatus("已取消裁剪，小窗口将显示整张图片", false);
         } else {
             canvas.setRegion(AppConfig.defaultBalanceRegion());
-            setStatus("\u5df2\u91cd\u7f6e\u4f59\u989d\u533a\u57df", false);
+            setStatus("已重置余额区域", false);
         }
         canvas.requestFocusInWindow();
     }
@@ -419,10 +419,10 @@ public class BackgroundRegionDialog extends JDialog {
         side.setLayout(new BoxLayout(side, BoxLayout.Y_AXIS));
         side.setPreferredSize(new Dimension(SIDEBAR_W, 10));
 
-        JPanel previewSection = section("\u5c0f\u7a97\u53e3\u9884\u89c8");
+        JPanel previewSection = section("小窗口预览");
         previewSection.add(previewPanel);
         previewSection.add(Box.createVerticalStrut(7));
-        previewSection.add(hint("\u5b9e\u9645\u6548\u679c\uff08\u4fdd\u5b58\u540e\u7a97\u53e3\u4f1a\u6309\u56fe\u7247\u6bd4\u4f8b\u8c03\u6574\uff09"));
+        previewSection.add(hint("实际效果（保存后窗口会按图片比例调整）"));
         side.add(previewSection);
 
         side.add(Box.createVerticalStrut(12));
@@ -434,7 +434,7 @@ public class BackgroundRegionDialog extends JDialog {
     }
 
     private JPanel buildColorSection() {
-        JPanel section = section("\u4f59\u989d\u6587\u5b57\u989c\u8272");
+        JPanel section = section("余额文字颜色");
 
         JPanel grid = new JPanel(new GridLayout(2, 6, 6, 6));
         grid.setOpaque(false);
@@ -467,7 +467,7 @@ public class BackgroundRegionDialog extends JDialog {
         hexField.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Theme.BORDER, 1),
                 BorderFactory.createEmptyBorder(5, 8, 5, 8)));
-        hexField.setToolTipText("\u4efb\u610f\u989c\u8272\uff0c\u683c\u5f0f #RRGGBB");
+        hexField.setToolTipText("任意颜色，格式 #RRGGBB");
         hexField.addActionListener(e -> applyHexField());
         hexField.addFocusListener(new FocusAdapter() {
             @Override
@@ -481,16 +481,16 @@ public class BackgroundRegionDialog extends JDialog {
     }
 
     private JPanel buildTipsSection() {
-        JPanel section = section("\u64cd\u4f5c\u63d0\u793a");
+        JPanel section = section("操作提示");
         for (String tip : new String[]{
-            "\u62d6\u62fd\u7a7a\u767d\u5904 \u2192 \u65b0\u5efa\u533a\u57df",
-            "\u62d6\u62fd\u6846\u5185 \u2192 \u79fb\u52a8\u533a\u57df",
-            "\u62d6\u62fd\u516b\u4e2a\u5c0f\u65b9\u5757 \u2192 \u7f29\u653e\u533a\u57df",
-            "\u300c\u81ea\u7531\u88c1\u526a\u300d\u91cc\u62d6\u62fd \u2192 \u624b\u7ed8\u8f6e\u5ed3",
-            "\u65b9\u5411\u952e\u5fae\u8c03\uff0cShift \u52a0\u901f",
-            "Ctrl + \u6eda\u8f6e \u2192 \u7f29\u653e\u753b\u5e03",
+            "拖拽空白处 → 新建区域",
+            "拖拽框内 → 移动区域",
+            "拖拽八个小方块 → 缩放区域",
+            "「自由裁剪」里拖拽 → 手绘轮廓",
+            "方向键微调，Shift 加速",
+            "Ctrl + 滚轮 → 缩放画布",
         }) {
-            section.add(hint("\u2022  " + tip));
+            section.add(hint("•  " + tip));
             section.add(Box.createVerticalStrut(4));
         }
         return section;
@@ -508,7 +508,7 @@ public class BackgroundRegionDialog extends JDialog {
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         actions.setOpaque(false);
 
-        FlatButton cancel = new FlatButton("\u53d6\u6d88", FlatButton.Kind.SECONDARY);
+        FlatButton cancel = new FlatButton("取消", FlatButton.Kind.SECONDARY);
         cancel.addActionListener(e -> onCancel());
         actions.add(cancel);
 
@@ -587,10 +587,10 @@ public class BackgroundRegionDialog extends JDialog {
 
     private void chooseImage() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("\u9009\u62e9\u80cc\u666f\u56fe\u7247");
+        chooser.setDialogTitle("选择背景图片");
         chooser.setAcceptAllFileFilterUsed(true);
         chooser.setFileFilter(new FileNameExtensionFilter(
-                "\u56fe\u7247 (*.png, *.jpg, *.jpeg, *.gif, *.bmp)", "png", "jpg", "jpeg", "gif", "bmp"));
+                "图片 (*.png, *.jpg, *.jpeg, *.gif, *.bmp)", "png", "jpg", "jpeg", "gif", "bmp"));
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
             canvas.requestFocusInWindow();
             return;
@@ -600,7 +600,7 @@ public class BackgroundRegionDialog extends JDialog {
             // Copying into the config directory is also how the file gets validated.
             config.storeBackgroundImage(source);
         } catch (IOException ex) {
-            setStatus("\u65e0\u6cd5\u8bfb\u53d6\u8be5\u56fe\u7247\uff1a" + ex.getMessage(), true);
+            setStatus("无法读取该图片：" + ex.getMessage(), true);
             return;
         }
         canvas.setImage(loadConfiguredImage());
@@ -609,7 +609,7 @@ public class BackgroundRegionDialog extends JDialog {
         previewPanel.revalidate();
         previewPanel.repaint();
         statusLabel.setForeground(Theme.TEXT_DIM);
-        setStatus("\u5df2\u5bfc\u5165 " + source.getName() + "\uff08\u5df2\u590d\u5236\u5230\u914d\u7f6e\u76ee\u5f55\uff0c\u539f\u56fe\u53ef\u5220\uff09", false);
+        setStatus("已导入 " + source.getName() + "（已复制到配置目录，原图可删）", false);
         updateEnabledState();
         updateZoomControls();
         canvas.requestFocusInWindow();
@@ -623,7 +623,7 @@ public class BackgroundRegionDialog extends JDialog {
         updateColorControls();
         canvas.repaint();
         previewPanel.repaint();
-        setStatus("\u6587\u5b57\u989c\u8272\u5df2\u66f4\u65b0", false);
+        setStatus("文字颜色已更新", false);
     }
 
     private void applyHexField() {
@@ -637,19 +637,19 @@ public class BackgroundRegionDialog extends JDialog {
             }
             applyColor(new Color(Integer.parseInt(raw, 16)));
         } catch (NumberFormatException e) {
-            setStatus("\u989c\u8272\u683c\u5f0f\u5e94\u4e3a #RRGGBB", true);
+            setStatus("颜色格式应为 #RRGGBB", true);
             updateColorControls();
         }
     }
 
     private void onConfirm() {
         if (canvas.getImage() == null) {
-            setStatus("\u8bf7\u5148\u9009\u62e9\u4e00\u5f20\u56fe\u7247", true);
+            setStatus("请先选择一张图片", true);
             return;
         }
         Rectangle2D.Float region = canvas.getRegion();
         if (region == null || region.width <= 0.01f || region.height <= 0.01f) {
-            setStatus("\u8bf7\u5148\u5728\u56fe\u7247\u4e0a\u62d6\u62fd\u6846\u51fa\u663e\u793a\u533a\u57df", true);
+            setStatus("请先在图片上拖拽框出显示区域", true);
             return;
         }
         config.setCropShape(canvas.getCrop());
@@ -702,7 +702,7 @@ public class BackgroundRegionDialog extends JDialog {
         // Before the first layout the canvas has no size, so the "fit" scale is not knowable yet;
         // the canvas reports back once it has been laid out.
         int percent = Math.max(1, (int) Math.round(canvas.effectiveScale() * 100));
-        zoomLabel.setText((fit ? "\u9002\u5e94\u7a97\u53e3 " : "") + percent + "%");
+        zoomLabel.setText((fit ? "适应窗口 " : "") + percent + "%");
     }
 
     private void updateReadout() {
@@ -718,14 +718,14 @@ public class BackgroundRegionDialog extends JDialog {
         if (cropMode()) {
             // Pixels, not percentages: when deciding what to keep, the real size is what matters.
             readoutLabel.setText(String.format(Locale.ROOT,
-                    "\u88c1\u526a  %.0f \u00d7 %.0f \u50cf\u7d20  \u6bd4\u4f8b %.2f:1%s",
+                    "裁剪  %.0f × %.0f 像素  比例 %.2f:1%s",
                     crop.width * image.getWidth(), crop.height * image.getHeight(),
                     BackgroundLayout.cropAspect(crop, image.getWidth(), image.getHeight()),
                     shape.isRectangle() ? "" : String.format(Locale.ROOT,
-                            "  \u00b7  %d \u4e2a\u9876\u70b9", shape.size())));
+                            "  ·  %d 个顶点", shape.size())));
         } else {
             readoutLabel.setText(String.format(Locale.ROOT,
-                    "\u533a\u57df  \u5bbd %.0f%%  \u9ad8 %.0f%%  \u5de6 %.0f%%  \u4e0a %.0f%%",
+                    "区域  宽 %.0f%%  高 %.0f%%  左 %.0f%%  上 %.0f%%",
                     r.width * 100, r.height * 100, r.x * 100, r.y * 100));
         }
 
@@ -740,11 +740,11 @@ public class BackgroundRegionDialog extends JDialog {
         if (shape.contains(r)) {
             sizeLabel.setForeground(Theme.alpha(Theme.ACCENT_SOFT, 210));
             sizeLabel.setText(String.format(Locale.ROOT,
-                    "\u5c0f\u7a97\u53e3\u5185\u7ea6 %.0f \u00d7 %.0f \u50cf\u7d20", regionW, regionH));
+                    "小窗口内约 %.0f × %.0f 像素", regionW, regionH));
         } else {
             // Otherwise the number would be silently cut by the window's edge.
             sizeLabel.setForeground(Theme.WARN);
-            sizeLabel.setText("\u4f59\u989d\u533a\u57df\u8d85\u51fa\u88c1\u526a\u8f6e\u5ed3\uff0c\u6570\u5b57\u4f1a\u88ab\u622a\u65ad");
+            sizeLabel.setText("余额区域超出裁剪轮廓，数字会被截断");
         }
     }
 
@@ -1013,7 +1013,7 @@ public class BackgroundRegionDialog extends JDialog {
         if (fm.stringWidth(text) <= maxWidth) {
             return text;
         }
-        String ellipsis = "\u2026";
+        String ellipsis = "…";
         int end = text.length();
         while (end > 1 && fm.stringWidth(text.substring(0, end) + ellipsis) > maxWidth) {
             end--;
@@ -1347,10 +1347,10 @@ public class BackgroundRegionDialog extends JDialog {
 
             g2.setFont(Theme.ui(Font.PLAIN, 13f));
             g2.setColor(Theme.TEXT_DIM);
-            drawCentred(g2, "\u8fd8\u6ca1\u6709\u9009\u62e9\u56fe\u7247", w / 2, y + boxH / 2 - 4);
+            drawCentred(g2, "还没有选择图片", w / 2, y + boxH / 2 - 4);
             g2.setFont(Theme.ui(Font.PLAIN, 10.5f));
             g2.setColor(Theme.alpha(Theme.TEXT_DIM, 185));
-            drawCentred(g2, "\u70b9\u51fb\u8fd9\u91cc\u6216\u5de6\u4e0a\u89d2\u300c\u9009\u62e9\u56fe\u7247\u2026\u300d\u6311\u4e00\u5f20\u80cc\u666f\u56fe",
+            drawCentred(g2, "点击这里或左上角「选择图片…」挑一张背景图",
                     w / 2, y + boxH / 2 + 18);
         }
 
@@ -1653,18 +1653,18 @@ public class BackgroundRegionDialog extends JDialog {
             trace.clear();
             CropShape traced = CropShape.fromTrace(normalised, TRACE_TOLERANCE);
             if (traced == null) {
-                setStatus("\u62d6\u62fd\u753b\u4e00\u5708\u624d\u80fd\u88c1\u51fa\u8f6e\u5ed3\uff08\u592a\u5c0f\u4e86\uff09", true);
+                setStatus("拖拽画一圈才能裁出轮廓（太小了）", true);
                 repaint();
                 return;
             }
             Rectangle2D.Float bounds = traced.bounds();
             if (bounds.width < AppConfig.MIN_CROP || bounds.height < AppConfig.MIN_CROP) {
-                setStatus("\u88c1\u526a\u8303\u56f4\u592a\u5c0f\uff0c\u8bf7\u91cd\u65b0\u62d6\u62fd", true);
+                setStatus("裁剪范围太小，请重新拖拽", true);
                 repaint();
                 return;
             }
             setCrop(traced);
-            setStatus("\u5df2\u88c1\u51fa " + traced.size() + " \u4e2a\u9876\u70b9\u7684\u8f6e\u5ed3\uff0c\u53ef\u62d6\u6846\u5185\u79fb\u52a8\u3001\u62d6\u65b9\u5757\u7f29\u653e", false);
+            setStatus("已裁出 " + traced.size() + " 个顶点的轮廓，可拖框内移动、拖方块缩放", false);
         }
 
         /** Builds a region from two edges, ordering them and honouring the minimum size. */

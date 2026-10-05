@@ -107,6 +107,6 @@ public final class PeakHours {
 
     /** The peak windows in Beijing time, for the tooltip. */
     public static String windowsInBeijingTime() {
-        return "\u5468\u4e00\u81f3\u5468\u4e94 09:00-12:00\u300114:00-18:00";
+        return "周一至周五 09:00-12:00、14:00-18:00";
     }
 }

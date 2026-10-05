@@ -166,10 +166,10 @@ public class TextPromptDialog extends JDialog {
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         actions.setOpaque(false);
-        FlatButton cancel = new FlatButton("\u53d6\u6d88", FlatButton.Kind.SECONDARY);
+        FlatButton cancel = new FlatButton("取消", FlatButton.Kind.SECONDARY);
         cancel.addActionListener(e -> onCancel());
         actions.add(cancel);
-        FlatButton ok = new FlatButton("\u4fdd\u5b58", FlatButton.Kind.PRIMARY);
+        FlatButton ok = new FlatButton("保存", FlatButton.Kind.PRIMARY);
         ok.addActionListener(e -> onConfirm());
         actions.add(ok);
         JPanel south = new JPanel(new BorderLayout());
@@ -190,7 +190,7 @@ public class TextPromptDialog extends JDialog {
     private void onConfirm() {
         String text = field.getText() == null ? "" : field.getText().trim();
         if (text.isEmpty()) {
-            hintLabel.setText("\u8bf7\u8f93\u5165\u540d\u5b57");
+            hintLabel.setText("请输入名字");
             return;
         }
         value = text;

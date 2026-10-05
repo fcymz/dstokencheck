@@ -141,11 +141,11 @@ public final class Preset {
     public static File save(String name, AppConfig config) throws IOException {
         String clean = name == null ? "" : name.trim();
         if (clean.isEmpty()) {
-            throw new IOException("\u540d\u5b57\u4e0d\u80fd\u4e3a\u7a7a");
+            throw new IOException("名字不能为空");
         }
         File folder = new File(directory(), folderName(clean));
         if (!folder.exists() && !folder.mkdirs()) {
-            throw new IOException("\u65e0\u6cd5\u521b\u5efa\u9884\u8bbe\u76ee\u5f55");
+            throw new IOException("无法创建预设目录");
         }
         // Drop the previous picture first: an overwrite must not leave the old one behind.
         for (File stale : imagesIn(folder)) {

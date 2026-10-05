@@ -88,6 +88,17 @@ java -jar target\dstokencheck.jar
 1. `target\dstokencheck.jar`（本地构建产物）
 2. 与 `run.bat` 同目录的 `dstokencheck.jar`（从 Releases 下载）
 
+**源码是 UTF-8，编译时必须显式指定字符集。** 用 Maven 构建无需操心（`pom.xml` 里已经设了
+`project.build.sourceEncoding=UTF-8`，编译器插件也带 `-encoding UTF-8`）。但如果你绕过 Maven
+自己调 `javac`，请务必带上 `-encoding UTF-8`：
+
+```bat
+javac -encoding UTF-8 -source 1.8 -target 1.8 -d out src\main\java\com\ruoyi\dstokencheck\*.java
+```
+
+在中文 Windows 上 `javac` 默认按 GBK 读源码，不带这个参数会直接报
+「编码 GBK 的不可映射字符」——源码里的中文注释和界面文案都会读不出来。
+
 ### 方式三：运行安装包（装好即用，不需要预装 Java）
 
 1. 打开 [Releases 页面](https://github.com/fcymz/dstokencheck/releases)，下载最新版的

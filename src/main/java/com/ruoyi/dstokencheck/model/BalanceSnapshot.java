@@ -103,7 +103,7 @@ public class BalanceSnapshot {
     public String primarySymbol() {
         String cur = primaryCurrency();
         if ("CNY".equalsIgnoreCase(cur)) {
-            return "\u00a5";
+            return "¥";
         }
         if ("USD".equalsIgnoreCase(cur)) {
             return "$";

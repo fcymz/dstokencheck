@@ -336,13 +336,13 @@ public class AppConfig {
      */
     public File storeBackgroundImage(File source) throws IOException {
         if (source == null || !source.isFile()) {
-            throw new IOException("\u6587\u4ef6\u4e0d\u5b58\u5728");
+            throw new IOException("文件不存在");
         }
         byte[] bytes;
         try {
             bytes = Files.readAllBytes(source.toPath());
         } catch (IOException e) {
-            throw new IOException("\u65e0\u6cd5\u8bfb\u53d6\u8be5\u6587\u4ef6");
+            throw new IOException("无法读取该文件");
         }
         return storeBackgroundBytes(bytes, extensionOf(source.getName()));
     }
@@ -353,7 +353,7 @@ public class AppConfig {
      */
     public File importBackgroundImage(InputStream source, String extension) throws IOException {
         if (source == null) {
-            throw new IOException("\u9884\u8bbe\u56fe\u7247\u7f3a\u5931");
+            throw new IOException("预设图片缺失");
         }
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         byte[] chunk = new byte[8192];
@@ -369,15 +369,15 @@ public class AppConfig {
         try {
             probe = ImageIO.read(new ByteArrayInputStream(bytes));
         } catch (IOException e) {
-            throw new IOException("\u65e0\u6cd5\u89e3\u6790\u8be5\u56fe\u7247");
+            throw new IOException("无法解析该图片");
         }
         if (probe == null) {
-            throw new IOException("\u4e0d\u662f\u53ef\u8bc6\u522b\u7684\u56fe\u7247\u683c\u5f0f");
+            throw new IOException("不是可识别的图片格式");
         }
 
         File dir = directory();
         if (!dir.exists() && !dir.mkdirs()) {
-            throw new IOException("\u65e0\u6cd5\u521b\u5efa\u914d\u7f6e\u76ee\u5f55");
+            throw new IOException("无法创建配置目录");
         }
         // A fresh name per import keeps the import non-destructive: the previous copy stays intact
         // until the edit is confirmed, so cancelling can never lose the old background.
@@ -387,7 +387,7 @@ public class AppConfig {
         } catch (IOException e) {
             // Do not leave a half-written copy behind for the next launch to trip over.
             deleteIfStoredImage(target);
-            throw new IOException("\u590d\u5236\u56fe\u7247\u5931\u8d25\uff1a" + e.getMessage());
+            throw new IOException("复制图片失败：" + e.getMessage());
         }
         backgroundImageName = target.getName();
         return target;

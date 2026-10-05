@@ -1,0 +1,29 @@
+# Source files are UTF-8 text and are expected to stay that way.
+#
+# This matters more than usual here: the Java sources contain Chinese comments and UI strings as
+# literal text, and javac reads a source file with the platform charset unless -encoding says
+# otherwise (GBK on a Chinese Windows). The Maven build pins UTF-8 in pom.xml; a hand-run javac
+# needs -encoding UTF-8. An editor that silently re-saves as GBK, or adds a BOM, breaks the build
+# in ways that are annoying to trace.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{java,xml,properties}]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json,md}]
+indent_style = space
+indent_size = 2
+
+[*.{ps1,cs}]
+indent_style = space
+indent_size = 4
+
+[*.bat]
+end_of_line = crlf
